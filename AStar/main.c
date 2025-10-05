@@ -171,8 +171,6 @@ int main(int argc, char **argv)
     // Levar em consideração o wall
     int16_t start[2] = {0, 0};
     int16_t end[2] = {HEIGHT - 1, WIDTH - 1};
-    // int16_t end[2] = {1, 1};
-    // int16_t start[2] = {HEIGHT - 2, WIDTH - 2};
 
     array[start[0]][start[1]] = 2;
     array[end[0]][end[1]] = 2;
@@ -212,17 +210,6 @@ int main(int argc, char **argv)
             {
                 continue;
             }
-
-            // float tempG = g[current[0]][current[1]] + 1.0f;
-            // if (abs(step_x) == abs(step_y))
-            // {
-            //     tempG += 2.0f;
-            // }
-            // else
-            // {
-            //     tempG += 1.0f;
-            // }
-            // tempG += 1.0f;
 
             if (open[y][x] != 1) // Se já foi calculado
             {
