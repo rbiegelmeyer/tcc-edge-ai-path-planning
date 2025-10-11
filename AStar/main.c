@@ -5,9 +5,12 @@
 #include <math.h>
 #include <string.h>
 
-#define WIDTH 20
-#define HEIGHT 20
+#define WIDTH 100
+#define HEIGHT 50
 #define DIFFICULTY 1
+
+FILE *fptr;
+const char filename[] = "result.csv";
 
 void printArray(int16_t array[HEIGHT][WIDTH])
 {
@@ -23,6 +26,8 @@ void printArray(int16_t array[HEIGHT][WIDTH])
         {
             printf("%c", array[y][x] == 1   ? 'X'
                          : array[y][x] == 2 ? '.'
+                         : array[y][x] == 3 ? '+'
+                         : array[y][x] == 4 ? 'o'
                                             : ' ');
         }
         printf("X\n");
@@ -122,7 +127,7 @@ int16_t *getNewCurrent(float f[HEIGHT][WIDTH], int16_t array[HEIGHT][WIDTH], int
     return lowest;
 }
 
-void reconstruct(int16_t *current, int16_t parent[HEIGHT][WIDTH][2], int16_t array[HEIGHT][WIDTH])
+int16_t reconstruct(int16_t *current, int16_t parent[HEIGHT][WIDTH][2], int16_t array[HEIGHT][WIDTH])
 {
     int16_t temp_y = 0, temp_x = 0;
     while (*current != -1)
@@ -135,10 +140,29 @@ void reconstruct(int16_t *current, int16_t parent[HEIGHT][WIDTH][2], int16_t arr
         current[0] = temp_y;
         current[1] = temp_x;
     }
-    printf("\n");
-    printArray(array);
-    // printArrayNum(array);
-    printf("\n");
+
+    return 0;
+}
+/**
+ *
+ */
+int16_t save_result(
+    FILE *file, uint32_t id,
+    int16_t start_x, int16_t start_y, int16_t end_x, int16_t end_y,
+    int16_t height, int16_t width, int16_t array[HEIGHT][WIDTH])
+{
+
+    fprintf(file, "%03d,%03d,%03d,%03d,%03d,%03d,%03d,", id, start_x, start_y, end_x, end_y, height, width);
+    for (int16_t y = 0; y < height; y++)
+    {
+        for (int16_t x = 0; x < width; x++)
+        {
+            fprintf(file, "%d", array[y][x]);
+        }
+    }
+    fprintf(file, "\n");
+
+    return 0;
 }
 
 int16_t steps[4][2] = {
@@ -148,32 +172,36 @@ int16_t steps[4][2] = {
     {-1, 0}, // Cima
 };
 
-int main(int argc, char **argv)
-{
-    int16_t array[HEIGHT][WIDTH] = {{0}};
-    int16_t parent[HEIGHT][WIDTH][2];
-    memset(parent, -1, sizeof(parent));
+int16_t array[HEIGHT][WIDTH];
+int16_t parent[HEIGHT][WIDTH][2];
 
-    float f[HEIGHT][WIDTH]; // = {0.0f};
-    float g[HEIGHT][WIDTH]; // = {0.0f};
-    float h[HEIGHT][WIDTH]; // = {0.0f};
+float f[HEIGHT][WIDTH]; // = {0.0f};
+float g[HEIGHT][WIDTH]; // = {0.0f};
+float h[HEIGHT][WIDTH]; // = {0.0f};
+
+int16_t open[HEIGHT][WIDTH];
+int16_t closed[HEIGHT][WIDTH];
+
+int16_t *current;
+int16_t done = 0;
+int16_t numOpen = 0;
+
+int16_t find_path(uint32_t id, int16_t start[2], int16_t end[2], int16_t array[HEIGHT][WIDTH], int16_t height, int16_t widht)
+{
+    int16_t ret = 0;
+    done = 0;
+    numOpen = 0;
+
+    memset(array, 0, sizeof(array));
+    memset(parent, -1, sizeof(parent));
     memset(f, 0.0f, sizeof(f));
     memset(g, 0.0f, sizeof(f));
     memset(h, 0.0f, sizeof(f));
+    memset(open, 0, sizeof(open));
+    memset(closed, 0, sizeof(closed));
 
-    int16_t *current;
-    int16_t done = 0;
-    int16_t numOpen = 0;
-    int16_t open[HEIGHT][WIDTH] = {0};
-    int16_t closed[HEIGHT][WIDTH] = {0};
-
-    // Defini posição de inicio e final
-    // Levar em consideração o wall
-    int16_t start[2] = {0, 0};
-    int16_t end[2] = {HEIGHT - 1, WIDTH - 1};
-
-    array[start[0]][start[1]] = 2;
-    array[end[0]][end[1]] = 2;
+    array[start[0]][start[1]] = 3;
+    array[end[0]][end[1]] = 4;
 
     insertObstacles((int16_t *)array, HEIGHT, WIDTH, DIFFICULTY);
     calculateHeuristics(h, g, f, end, HEIGHT, WIDTH);
@@ -189,7 +217,15 @@ int main(int argc, char **argv)
         {
             done = 1;
             reconstruct(current, parent, array);
-            return 0;
+
+            array[start[0]][start[1]] = 3;
+            array[end[0]][end[1]] = 4;
+            // printArray(array);
+            // printf("\n");
+
+            save_result(fptr, id, start[1], start[0], end[1], end[0], HEIGHT, WIDTH, array);
+
+            break;
         }
 
         open[current[0]][current[1]] = 0;
@@ -197,8 +233,7 @@ int main(int argc, char **argv)
         closed[current[0]][current[1]] = 1;
 
         // Itera ao redor do current
-        int16_t x = 0;
-        int16_t y = 0;
+        int16_t x = 0, y = 0;
         for (uint8_t step = 0; step < 4; step++)
         {
             x = current[1] + steps[step][1];
@@ -226,10 +261,60 @@ int main(int argc, char **argv)
     if (numOpen == 0 && done == 0)
     {
         done = 1;
-        printf("\n");
-        printArray(array);
-        printf("\nNo solution!\n\n");
+        // printf("\n");
+        // printArray(array);
+        ret = 1;
+        // printf("No solution!\n\n");
     }
 
+    return ret;
+}
+
+// time_t time;
+
+int main(int argc, char **argv)
+{
+    uint32_t start = time(0);
+    uint32_t end1 = 0;
+    uint32_t end2 = 0;
+
+    printf("start = %d\n", start);
+    fptr = fopen(filename, "a+");
+
+    
+
+    // mingw_gettimeofday(&time, NULL);
+    // int64_t s1 = (int64_t)(time.tv_sec) * 1000;
+    // printf("start = %lli\n", s1);
+
+
+    uint8_t ret = 0;
+    uint32_t start_id = 0;
+    uint32_t quant_id = 10000;
+    uint32_t end_id = start_id + quant_id;
+
+
+    for (uint32_t id = start_id; id < end_id; id++)
+    {
+        // Defini posição de inicio e final
+        // Levar em consideração o wall
+        srand(id);
+        int16_t start[2] = {rand() % HEIGHT, rand() % WIDTH};
+        int16_t end[2] = {rand() % HEIGHT, rand() % WIDTH};
+        // printf("%5d\n", id);
+        
+        ret = find_path(id, start, end, array, HEIGHT, WIDTH);
+
+        printf("%5d - (%2d,%2d) -> (%2d,%2d)%s\n",id, start[1], start[0], end[1], end[0], (ret) ? " - No Solution" : "");
+    }
+
+    end1 = time(0);
+    fclose(fptr);
+
+
+    end2 = time(0);
+    printf("end1 = %d\n", end1 - start);
+    printf("end2 = %d\n", end2 - end1);
+    
     return 0;
 }
