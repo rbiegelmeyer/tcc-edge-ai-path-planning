@@ -73,7 +73,7 @@ def iou_metric(y_true, y_pred, smooth=1e-6):
     iou = (intersection + smooth) / (union + smooth)
     return iou
 
-def build_unet(input_size=(64, 64, 1)):
+def build_unet(input_size):
     """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
     
     inputs = Input(input_size)

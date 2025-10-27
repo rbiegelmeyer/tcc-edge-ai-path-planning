@@ -1,6 +1,6 @@
 .vscode
 
-AStar/*.o
+AStar/astar
 AStar/*.csv
 
 .venv
