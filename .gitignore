@@ -1,1 +1,9 @@
-*.exe
+.vscode
+
+AStar/*.o
+AStar/*.csv
+
+.venv
+Python_Trainer/*.npy
+Python_Trainer/*.png
+Python_Trainer/*.keras

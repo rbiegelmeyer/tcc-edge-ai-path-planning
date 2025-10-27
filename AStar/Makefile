@@ -12,7 +12,7 @@ abc: inc.o inc.h main.c
 	$(CC) $(CFLAGS) inc.o main.c -o execute_me
 
 main: main.c
-	$(CC) $(CFLAGS) main.c -o astar -lm
+	$(CC) $(CFLAGS) main.c -o astar.o -lm
 
 test:
 	./astar

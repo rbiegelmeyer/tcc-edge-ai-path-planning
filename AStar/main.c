@@ -5,8 +5,16 @@
 #include <math.h>
 #include <string.h>
 
-#define WIDTH 100
-#define HEIGHT 50
+#ifdef WIN32
+#include <io.h>
+#define F_OK 0
+#define access _access
+#else
+#include <unistd.h>
+#endif
+
+#define WIDTH 64
+#define HEIGHT 64
 #define DIFFICULTY 1
 
 FILE *fptr;
@@ -75,11 +83,11 @@ void printCostArray(float array[HEIGHT][WIDTH])
     }
 }
 
-void insertObstacles(int16_t *array, int16_t height, int16_t width, int16_t difficulty)
+void insertObstacles(int16_t *array, int16_t height, int16_t width, int16_t difficulty, uint32_t id)
 {
     // Set random seed
     // srand(time(0));
-    srand(10);
+    srand(id);
 
     // Add obstacles
     for (int16_t y = 0; y < height; y++)
@@ -203,7 +211,7 @@ int16_t find_path(uint32_t id, int16_t start[2], int16_t end[2], int16_t array[H
     array[start[0]][start[1]] = 3;
     array[end[0]][end[1]] = 4;
 
-    insertObstacles((int16_t *)array, HEIGHT, WIDTH, DIFFICULTY);
+    insertObstacles((int16_t *)array, HEIGHT, WIDTH, DIFFICULTY, id);
     calculateHeuristics(h, g, f, end, HEIGHT, WIDTH);
 
     open[start[0]][start[1]] = 1;
@@ -274,25 +282,30 @@ int16_t find_path(uint32_t id, int16_t start[2], int16_t end[2], int16_t array[H
 
 int main(int argc, char **argv)
 {
-    uint32_t start = time(0);
-    uint32_t end1 = 0;
-    uint32_t end2 = 0;
+    // uint32_t start = time(0);
+    // uint32_t end1 = 0;
+    // uint32_t end2 = 0;
+    // printf("start = %d\n", start);
 
-    printf("start = %d\n", start);
-    fptr = fopen(filename, "a+");
-
-    
+    if (access(filename, F_OK) == 0)
+    {
+        fptr = fopen(filename, "w+");
+        fprintf(fptr, "id,start_x,start_y,end_x,end_y,height,width,map\n");
+    }
+    else
+    {
+        printf("!!!!!!!!!!!!!!\n");
+        fptr = fopen(filename, "a+");
+    }
 
     // mingw_gettimeofday(&time, NULL);
     // int64_t s1 = (int64_t)(time.tv_sec) * 1000;
     // printf("start = %lli\n", s1);
 
-
     uint8_t ret = 0;
     uint32_t start_id = 0;
-    uint32_t quant_id = 10000;
+    uint32_t quant_id = 100;
     uint32_t end_id = start_id + quant_id;
-
 
     for (uint32_t id = start_id; id < end_id; id++)
     {
@@ -302,19 +315,18 @@ int main(int argc, char **argv)
         int16_t start[2] = {rand() % HEIGHT, rand() % WIDTH};
         int16_t end[2] = {rand() % HEIGHT, rand() % WIDTH};
         // printf("%5d\n", id);
-        
+
         ret = find_path(id, start, end, array, HEIGHT, WIDTH);
 
-        printf("%5d - (%2d,%2d) -> (%2d,%2d)%s\n",id, start[1], start[0], end[1], end[0], (ret) ? " - No Solution" : "");
+        printf("%5d - (%2d,%2d) -> (%2d,%2d)%s\n", id, start[1], start[0], end[1], end[0], (ret) ? " - No Solution" : "");
     }
 
-    end1 = time(0);
+    // end1 = time(0);
     fclose(fptr);
 
+    // end2 = time(0);
+    // printf("end1 = %d\n", end1 - start);
+    // printf("end2 = %d\n", end2 - end1);
 
-    end2 = time(0);
-    printf("end1 = %d\n", end1 - start);
-    printf("end2 = %d\n", end2 - end1);
-    
     return 0;
 }
