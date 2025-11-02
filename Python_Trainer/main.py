@@ -1,10 +1,12 @@
 import sys
+import os
 import pandas as pd
 import numpy as np
 
 from sklearn.model_selection import train_test_split
 
 import tensorflow as tf
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D, concatenate, Dropout, Conv2DTranspose
 
@@ -18,6 +20,8 @@ def preprocess_data(df):
     """
     X_list = []
     Y_list = []
+    # TODO Melhora a forma como adquirir dado da dificuldade
+    difficulty = df.head(1)['difficulty'][0]
 
     for index, row in df.iterrows():
         H, W = row['height'], row['width']
@@ -64,7 +68,7 @@ def preprocess_data(df):
     # O valor máximo codificado é 4 (para o ponto final)
     X_normalized = X / 4.0
 
-    return X_normalized, Y
+    return X_normalized, Y, difficulty
 
 # Métrica crucial para segmentação (IoU)
 def iou_metric(y_true, y_pred, smooth=1e-6):
@@ -124,40 +128,35 @@ def build_unet(input_size):
     
     return model
 
-
+# Carrega data frame
 df_raw = pd.read_csv('../AStar/result.csv')
 
-# 0 Free
-# 1 Obstacle
-# 2 Path
-# 3 Start
-# 4 Goal
+# Processa os dados do dataframe
+X, Y, difficulty = preprocess_data(df_raw)
 
-# print(df_raw)
 
-X, Y = preprocess_data(df_raw)
 
 # Divisão dos dados
 X_train, X_temp, Y_train, Y_temp = train_test_split(X, Y, test_size=0.3, random_state=42)
 X_val, X_test, Y_val, Y_test = train_test_split(X_temp, Y_temp, test_size=0.5, random_state=42)
 
-np.save('X_test.npy', X_test)
-np.save('Y_test.npy', Y_test)
-
-
 print(f"Shape do X_train (Input): {X_train.shape}")
 print(f"Shape do Y_train (Target/Máscara): {Y_train.shape}")
 print(f"Valor Máximo em X_train (deve ser ~1.0): {np.max(X_train)}")
-
 
 # Dimensões do seu mapa
 H, W = X_train.shape[1], X_train.shape[2]
 model = build_unet(input_size=(H, W, 1))
 
+
+# Results Path
+results_path = f'./results/{H:03}_{W:03}_{difficulty:02}'
+# Cria o diretorio caso não exista
+os.makedirs(results_path, exist_ok=True)
+np.save(f'{results_path}/X_test.npy', X_test)
+np.save(f'{results_path}/Y_test.npy', Y_test)
+
 # model.summary() # Descomente para ver a arquitetura detalhada
-
-
-
 
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
@@ -166,7 +165,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 early_stopping = EarlyStopping(monitor='val_loss', patience=10, verbose=1, restore_best_weights=True)
 
 # 2. Checkpoint do Modelo: Salva o melhor modelo que alcançou a menor 'val_loss'.
-checkpoint_filepath = './best_path_finder_unet.keras'
+checkpoint_filepath = f'{results_path}/best_path_finder_unet.keras'
 model_checkpoint = ModelCheckpoint(checkpoint_filepath, 
                                    monitor='val_loss', 
                                    save_best_only=True, 
@@ -178,7 +177,7 @@ history = model.fit(
     X_train, Y_train,
     validation_data=(X_val, Y_val),
     epochs=100, # Um número razoavelmente alto, EarlyStopping vai parar
-    batch_size=8, # Ajustar conforme a memória da GPU
+    batch_size=32, # Ajustar conforme a memória da GPU
     callbacks=[early_stopping, model_checkpoint],
     verbose=2 # Exibe menos detalhes por época
 )
@@ -196,7 +195,6 @@ matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 
-checkpoint_filepath = './best_path_finder_unet.keras'
 
 # Carregar o melhor modelo para avaliação
 best_model = tf.keras.models.load_model(
@@ -214,6 +212,8 @@ def visualize_results(X_data, Y_true, model, num_samples=3):
     """Visualiza o input, o caminho real e a previsão do modelo."""
     
     predictions = model.predict(X_data[:num_samples])
+    images_result = f'{results_path}/test'
+    os.makedirs(images_result, exist_ok=True)
     
     for i in range(num_samples):
         plt.figure()
@@ -240,8 +240,8 @@ def visualize_results(X_data, Y_true, model, num_samples=3):
         plt.axis('off')
         
         # plt.show()
-        plt.savefig(f'mapa_predicao_{i}.png')
+        plt.savefig(f'{images_result}/mapa_predicao_{i}.png')
         plt.close() # Libera a memória da figura
 
 # Visualize as primeiras 5 amostras do conjunto de teste
-visualize_results(X_test, Y_test, best_model, num_samples=10)
+visualize_results(X_test, Y_test, best_model, num_samples=20)
