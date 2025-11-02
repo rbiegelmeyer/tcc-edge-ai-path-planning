@@ -304,7 +304,7 @@ int main(int argc, char **argv)
 
     uint8_t ret = 0;
     uint32_t start_id = 0;
-    uint32_t quant_id = 100;
+    uint32_t quant_id = 10000;
     uint32_t end_id = start_id + quant_id;
 
     for (uint32_t id = start_id; id < end_id; id++)

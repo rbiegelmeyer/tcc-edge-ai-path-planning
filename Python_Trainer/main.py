@@ -244,4 +244,4 @@ def visualize_results(X_data, Y_true, model, num_samples=3):
         plt.close() # Libera a memória da figura
 
 # Visualize as primeiras 5 amostras do conjunto de teste
-visualize_results(X_test, Y_test, best_model, num_samples=5)
+visualize_results(X_test, Y_test, best_model, num_samples=10)
