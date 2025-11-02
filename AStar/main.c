@@ -13,8 +13,8 @@
 #include <unistd.h>
 #endif
 
-#define WIDTH 32
-#define HEIGHT 32
+#define WIDTH 64
+#define HEIGHT 64
 #define DIFFICULTY 1
 
 FILE *fptr;
@@ -155,12 +155,13 @@ int16_t reconstruct(int16_t *current, int16_t parent[HEIGHT][WIDTH][2], int16_t 
  *
  */
 int16_t save_result(
-    FILE *file, uint32_t id,
+    FILE *file, uint32_t id, uint8_t difficulty,
     int16_t start_x, int16_t start_y, int16_t end_x, int16_t end_y,
     int16_t height, int16_t width, int16_t array[HEIGHT][WIDTH])
 {
 
-    fprintf(file, "%03d,%03d,%03d,%03d,%03d,%03d,%03d,", id, start_x, start_y, end_x, end_y, height, width);
+    fprintf(file, "%03d,%02d,%03d,%03d,%03d,%03d,%03d,%03d,",
+            id, difficulty, start_x, start_y, end_x, end_y, height, width);
     for (int16_t y = 0; y < height; y++)
     {
         for (int16_t x = 0; x < width; x++)
@@ -231,7 +232,7 @@ int16_t find_path(uint32_t id, int16_t start[2], int16_t end[2], int16_t array[H
             // printArray(array);
             // printf("\n");
 
-            save_result(fptr, id, start[1], start[0], end[1], end[0], HEIGHT, WIDTH, array);
+            save_result(fptr, id, DIFFICULTY, start[1], start[0], end[1], end[0], HEIGHT, WIDTH, array);
 
             break;
         }
@@ -290,7 +291,7 @@ int main(int argc, char **argv)
     if (access(filename, F_OK) == 0)
     {
         fptr = fopen(filename, "w+");
-        fprintf(fptr, "id,start_x,start_y,end_x,end_y,height,width,map\n");
+        fprintf(fptr, "id,difficulty,start_x,start_y,end_x,end_y,height,width,map\n");
     }
     else
     {
