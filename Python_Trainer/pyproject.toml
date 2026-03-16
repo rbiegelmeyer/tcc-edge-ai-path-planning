@@ -3,17 +3,19 @@ name = "python-trainer"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = "==3.9.13"
 dependencies = [
-    "matplotlib>=3.10.7",
-    "numpy>=2.3.4",
+    "matplotlib>=3.9.4",
+    "numpy==1.26.4",
     "pandas>=2.3.3",
-    "scikit-learn>=1.7.2",
-    "tensorflow[and-cuda,gpu]>=2.20.0",
+    "scikit-learn>=1.6.1",
+    "scipy>=1.13.1",
+    "tensorflow[and-cuda]==2.18",
+    "tf2onnx>=1.16.1",
 ]
 
 [dependency-groups]
-dev = [
-    "autopep8>=2.3.2",
-    "pylint>=4.0.2",
-]
+dev = []
+
+[tool.uv.sources]
+tf2onnx = { git = "https://github.com/onnx/tensorflow-onnx" }
