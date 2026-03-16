@@ -1,20 +1,48 @@
+import os
+import sys
+import numpy as np
+import pandas as pd
+
 import matplotlib.pyplot as plt
 import matplotlib
+matplotlib.use('Agg')
+
+import tensorflow as tf
+# print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 from keras import layers
 import keras
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D, concatenate, Dropout, Conv2DTranspose
 from tensorflow.keras.models import Model
-import sys
-import os
-import pandas as pd
-import numpy as np
-import logging
 
 from sklearn.model_selection import train_test_split
 
-import tensorflow as tf
-print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+# from iou_metric import iou_metric_tf
+
+import logging
+
+def iou_metric(y_true, y_pred, smooth=1e-6):
+    """
+    Calcula a métrica Intersection over Union (IoU), também conhecida como Índice de Jaccard.
+
+        Esta função avalia a sobreposição entre a máscara real (y_true) e a predição do modelo (y_pred).
+        É a métrica padrão para problemas de segmentação e planejamento de caminhos, pois penaliza
+        tanto os pixels não detectados (falsos negativos) quanto os pixels detectados incorretamente 
+        (falsos positivos).
+
+    Args:
+        y_true: Ground truth (gabarito real).
+        y_pred: Valores preditos pelo modelo (geralmente após ativação Sigmoid).
+        smooth: Pequena constante para evitar divisão por zero quando as áreas forem nulas.
+
+    Returns:
+        Um valor escalar entre 0 e 1, onde 1 indica uma sobreposição perfeita.
+    """
+
+    intersection = tf.reduce_sum(y_true * y_pred)
+    union = tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) - intersection
+    iou = (intersection + smooth) / (union + smooth)
+    return iou
 
 # 0 = Todos os logs (padrão)
 # 1 = Filtra logs INFO
@@ -93,16 +121,6 @@ def preprocess_data(df):
 
     return X_normalized, Y, difficulty
 
-# Métrica crucial para segmentação (IoU)
-
-
-def iou_metric(y_true, y_pred, smooth=1e-6):
-    intersection = tf.reduce_sum(y_true * y_pred)
-    union = tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) - intersection
-    iou = (intersection + smooth) / (union + smooth)
-    return iou
-
-
 def build_unet1(input_size):
     """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
 
@@ -158,63 +176,6 @@ def build_unet1(input_size):
     model.summary()
 
     return model
-
-def build_unet1_1(input_size):
-    """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
-
-    inputs = Input(input_size)
-
-    # Let's create a function for one step of the encoder block, so as to increase the reusability when making custom unets
-    def encoder_block(filters, inputs):
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-        p = MaxPooling2D(pool_size=(2, 2), padding='same')(x)
-        return x, p  # p provides the input to the next encoder block and s provides the context/features to the symmetrically opposte decoder block
-    # Baseline layer is just a bunch on Convolutional Layers to extract high level features from the downsampled Image
-
-    def baseline_layer(filters, inputs):
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-        return x
-    # Decoder Block
-
-    def decoder_block(filters, connections, inputs):
-        x = Conv2DTranspose(filters, kernel_size=(2, 2), padding='same', activation='relu', strides=2)(inputs)
-        skip_connections = concatenate([x, connections], axis=-1)
-        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(skip_connections)
-        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
-        return x
-
-    # defining the encoder
-    s1, p1 = encoder_block(64, inputs=inputs)
-    s2, p2 = encoder_block(128, inputs=p1)
-    # s3, p3 = encoder_block(256, inputs=p2)
-    # s4, p4 = encoder_block(512, inputs=p3)
-
-    # Setting up the baseline
-    baseline = baseline_layer(256, p2)
-
-    # Defining the entire decoder
-    # d1 = decoder_block(512, s4, baseline)
-    # d2 = decoder_block(256, s3, d1)
-    d3 = decoder_block(128, s2, baseline)
-    d4 = decoder_block(64, s1, d3)
-
-    # Saída: Um canal de saída, ativado por Sigmoid para máscara binária (0 ou 1)
-    output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d4)
-
-    model = Model(inputs=inputs, outputs=output, name='Unet1_1')
-    # model = keras.Sequential([(inputs=inputs, outputs=output, name='Unet')
-
-    # Compilação: Binary Cross-Entropy é ideal para a máscara binária
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy', iou_metric])
-
-    model.summary()
-
-    return model
-
 
 def build_unet2(input_size):
     """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
@@ -274,7 +235,7 @@ def build_unet2(input_size):
 
 # Carrega data frame
 # df_raw = pd.read_csv('../AStar/result.csv')
-df_filename = '../AStar/result_W064xH064_D01_S000000_E001000.csv'
+df_filename = '../AStar/result_W064xH064_D01_S000000_E005000.csv'
 # df_filename = '../AStar/result_W064xH064_D01_S000000_E010000.csv'
 df_raw = pd.read_csv(df_filename)
 # Remove map duplicados
@@ -299,7 +260,7 @@ print(f"Valor Máximo em X_train (deve ser ~1.0): {np.max(X_train)}")
 H, W = X_train.shape[1], X_train.shape[2]
 
 # Construção da U-NET
-model = build_unet1_1(input_size=(H, W, 1))
+model = build_unet1(input_size=(H, W, 1))
 
 # Results Path
 basename_for_results = os.path.basename(df_filename).split('.')[0]
@@ -319,7 +280,7 @@ np.savez(f'{results_path}/Z_test.npz', X_test, Y_test)
 # Definir callbacks de segurança
 # 1. Parada Antecipada: Monitora a perda de validação. Se não melhorar por 10 épocas, para.
 early_stopping = EarlyStopping(monitor='val_iou_metric',
-                               patience=10,
+                               patience=50,
                                verbose=1,
                                restore_best_weights=True,
                                mode='max')
@@ -337,7 +298,7 @@ print("\nIniciando treinamento da CNN (U-Net)...")
 history = model.fit(
     X_train, Y_train,
     validation_data=(X_val, Y_val),
-    epochs=50,  # Um número razoavelmente alto, EarlyStopping vai parar
+    epochs=1000,  # Um número razoavelmente alto, EarlyStopping vai parar
     batch_size=64,  # Ajustar conforme a memória da GPU
     callbacks=[early_stopping, model_checkpoint],
     verbose=2  # Exibe menos detalhes por época
@@ -354,20 +315,10 @@ best_model = tf.keras.models.load_model(
 # Avaliação final no conjunto de Teste
 print("\nAvaliação Final no Conjunto de Teste:")
 loss, acc, iou = best_model.evaluate(X_test, Y_test, verbose=1)
-print(
-    f"Loss: {loss:.4f} | Acurácia de Pixel: {acc:.4f} | IoU (Jaccard): {iou:.4f}")
+print(f"Loss: {loss:.4f} | Acurácia de Pixel: {acc:.4f} | IoU (Jaccard): {iou:.4f}")
 
-
-# Correção para o erro de backend Tkinter/GUI
-# Configura o backend para 'Agg' (modo não-interativo/sem GUI)
-# Faça isso antes de importar pyplot!
-matplotlib.use('Agg')
-# Se o seu código tiver importado pyplot antes, o erro persistirá.
-# Portanto, mova esta linha para o topo do seu script.
 
 # --- Visualização de Amostras de Teste ---
-
-
 def visualize_results(X_data, Y_true, model, num_samples=3):
     """Visualiza o input, o caminho real e a previsão do modelo."""
 

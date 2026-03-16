@@ -2,8 +2,16 @@
 import os
 import onnxruntime as ort
 import numpy as np
+# Correção para o erro de backend Tkinter/GUI
+import matplotlib
+# Configura o backend para 'Agg' (modo não-interativo/sem GUI)
+# Faça isso antes de importar pyplot!
+matplotlib.use('Agg') 
+# Se o seu código tiver importado pyplot antes, o erro persistirá.
+# Portanto, mova esta linha para o topo do seu script.
+import matplotlib.pyplot as plt
 
-results_path = './results/result_W064xH064_D01_S000000_E005000'
+results_path = './results/result_W064xH064_D01_S000000_E001000'
 model_basename = f'{results_path}/best_path_finder_Unet1'
 model_name = f'{model_basename}.onnx'
 data_input_filename = f'{results_path}/X_test.npy'
@@ -30,14 +38,6 @@ print(f"Nome da saída: {output_name}, Formato: {output_shape}")
 print("Rodando a inferência...")
 outputs = session.run(None, {input_name: X_test})
 
-# Correção para o erro de backend Tkinter/GUI
-import matplotlib
-# Configura o backend para 'Agg' (modo não-interativo/sem GUI)
-# Faça isso antes de importar pyplot!
-matplotlib.use('Agg') 
-# Se o seu código tiver importado pyplot antes, o erro persistirá.
-# Portanto, mova esta linha para o topo do seu script.
-import matplotlib.pyplot as plt
 
 # --- Visualização de Amostras de Teste ---
 def visualize_results(X_data, Y_true, num_samples=3):

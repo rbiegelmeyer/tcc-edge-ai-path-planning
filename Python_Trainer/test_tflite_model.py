@@ -1,23 +1,17 @@
 
-import os
-import numpy as np
 import tensorflow as tf
+import numpy as np
+import os
 
-# Correção para o erro de backend Tkinter/GUI
 import matplotlib
-# Configura o backend para 'Agg' (modo não-interativo/sem GUI)
-# Faça isso antes de importar pyplot!
 matplotlib.use('Agg')
-# Se o seu código tiver importado pyplot antes, o erro persistirá.
-# Portanto, mova esta linha para o topo do seu script.
 import matplotlib.pyplot as plt
 
-results_path = './results/result_W064xH064_D01_S000000_E001000'
+results_path = './results/result_W064xH064_D01_S000000_E001000/'
 model_basename = f'{results_path}/best_path_finder_Unet1'
-model_name = f'{model_basename}.keras'
+model_name = f'{model_basename}.tflite'
 data_input_filename = f'{results_path}/X_test.npy'
 data_output_filename = f'{results_path}/Y_test.npy'
-
 
 # Métrica crucial para segmentação (IoU)
 def iou_metric(y_true, y_pred, smooth=1e-6):
@@ -26,28 +20,44 @@ def iou_metric(y_true, y_pred, smooth=1e-6):
     iou = (intersection + smooth) / (union + smooth)
     return iou
 
-# Carregar o melhor modelo para avaliação
-best_model = tf.keras.models.load_model(
-    model_name, 
-    custom_objects={'iou_metric': iou_metric} # Recarregar a métrica customizada
-)
-
 X_test = np.load(data_input_filename)
 Y_test = np.load(data_output_filename)
 
-# Avaliação final no conjunto de Teste
-print("\nAvaliação Final no Conjunto de Teste:")
-loss, acc, iou = best_model.evaluate(X_test, Y_test, verbose=0)
-print(f"Loss: {loss:.4f} | Acurácia de Pixel: {acc:.4f} | IoU (Jaccard): {iou:.4f}")
 
+def run_tflite_inference(X_data):
+    """Executa a inferência para um conjunto de dados."""
+
+    # Preparação do Interpretador TFLite
+    interpreter = tf.lite.Interpreter(model_path=model_name)
+    interpreter.allocate_tensors()
+
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
+    preds = []
+    for i in range(len(X_data)):
+        # Preparar input (Batch, H, W, C)
+        input_tensor = np.expand_dims(X_data[i], axis=0).astype(np.float32)
+        interpreter.set_tensor(input_details[0]['index'], input_tensor)
+        interpreter.invoke()
+        
+        output = interpreter.get_tensor(output_details[0]['index'])
+        preds.append(output[0]) # Remove dimensão de batch do resultado
+    return np.array(preds)
+
+print("\nAvaliando modelo TFLite no Conjunto de Teste...")
+all_predictions = run_tflite_inference(X_test)
+
+# Cálculo manual das métricas
+# ious = [iou_metric(Y_test[i], (all_predictions[i] > 0.5).astype(np.float32)) for i in range(len(Y_test))]
+# avg_iou = np.mean(ious)
 
 
 # --- Visualização de Amostras de Teste ---
-def visualize_results(X_data, Y_true, model, num_samples=3):
+def visualize_tflite_results(X_data, Y_true, predictions, results_path, num_samples=5):
     """Visualiza o input, o caminho real e a previsão do modelo."""
 
-    predictions = model.predict(X_data[:num_samples])
-    images_result = f'{results_path}/test/{model.name}'
+    images_result = f'{results_path}/test/tflite/'
     print(f"Dados de teste gerados em: {images_result}")
     os.makedirs(images_result, exist_ok=True)
 
@@ -79,6 +89,6 @@ def visualize_results(X_data, Y_true, model, num_samples=3):
         plt.savefig(f'{images_result}/mapa_predicao_{i}.png')
         plt.close()  # Libera a memória da figura
 
-# Visualize as primeiras 5 amostras do conjunto de teste
-num_samples = int(len(X_test) * 0.15)
-visualize_results(X_test, Y_test, best_model, num_samples=num_samples)
+# Visualizar uma porcentagem das amostras
+num_viz = int(len(X_test) * 0.15)
+visualize_tflite_results(X_test, Y_test, all_predictions, results_path, num_samples=num_viz)

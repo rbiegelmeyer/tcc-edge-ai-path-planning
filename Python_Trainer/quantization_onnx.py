@@ -2,7 +2,7 @@ import onnx
 from onnxruntime.quantization import quantize_static, quantize_dynamic, QuantType, CalibrationDataReader
 import numpy as np
 
-results_path = f'./results/result_W064xH064_D01_S000000_E001000'
+results_path = f'./results/result_W064xH064_D01_S000000_E005000'
 checkpoint_filepath = f'{results_path}/best_path_finder_Unet1_1'
 
 model_fp32_path = f'{checkpoint_filepath}.onnx'
@@ -17,6 +17,12 @@ quantize_dynamic(
     # weight_type=QuantType.QUInt8
 )
 
+data_input_filename = f'{results_path}/X_test.npy'
+data_output_filename = f'{results_path}/Y_test.npy'
+X_test = np.load(data_input_filename)
+Y_test = np.load(data_output_filename)
+
+
 class PathDataReader(CalibrationDataReader):
     def __init__(self, calibration_data, input_name):
         self.input_name = input_name
@@ -29,12 +35,6 @@ class PathDataReader(CalibrationDataReader):
 
     def get_next(self):
         return next(self.data, None)
-
-data_input_filename = f'{results_path}/X_test.npy'
-data_output_filename = f'{results_path}/Y_test.npy'
-X_test = np.load(data_input_filename)
-Y_test = np.load(data_output_filename)
-
 dr = PathDataReader(X_test, 'entrada_mapa')
 
 

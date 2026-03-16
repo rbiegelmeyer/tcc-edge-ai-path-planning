@@ -1,32 +1,12 @@
+import numpy as np
 import tensorflow as tf
 import tf2onnx
 import onnx
+from onnxruntime.quantization import quantize_static, quantize_dynamic, QuantType, CalibrationDataReader
+from iou_metric import iou_metric
 
 # Regex
 import re
-
-
-def iou_metric(y_true, y_pred, smooth=1e-6):
-    """
-    Calcula a métrica Intersection over Union (IoU), também conhecida como Índice de Jaccard.
-    
-    Esta função avalia a sobreposição entre a máscara real (y_true) e a predição do modelo (y_pred).
-    É a métrica padrão para problemas de segmentação e planejamento de caminhos, pois penaliza
-    tanto os pixels não detectados (falsos negativos) quanto os pixels detectados incorretamente 
-    (falsos positivos).
-    
-    Args:
-        y_true: Ground truth (gabarito real).
-        y_pred: Valores preditos pelo modelo (geralmente após ativação Sigmoid).
-        smooth: Pequena constante para evitar divisão por zero quando as áreas forem nulas.
-        
-    Returns:
-        Um valor escalar entre 0 e 1, onde 1 indica uma sobreposição perfeita.
-    """
-    intersection = tf.reduce_sum(y_true * y_pred)
-    union = tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) - intersection
-    iou = (intersection + smooth) / (union + smooth)
-    return iou
 
 # Isolar informações do caminho do arquivo
 def get_W_H_D(text):
@@ -40,7 +20,7 @@ def get_W_H_D(text):
     return W, H, D
 
 results_path = f'./results/result_W064xH064_D01_S000000_E001000'
-checkpoint_filepath = f'{results_path}/best_path_finder_Unet1_1'
+checkpoint_filepath = f'{results_path}/best_path_finder_Unet1'
 
 W, H, D = get_W_H_D(results_path)
 
@@ -60,3 +40,35 @@ input_signature=[tf.TensorSpec([None, H, W, 1], tf.float32, name='entrada_mapa')
 # Use from_function for tf functions
 onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature, opset=13)
 onnx.save(onnx_model, f'{checkpoint_filepath}.onnx')
+
+# Quantization
+data_input_filename = f'{results_path}/X_test.npy'
+data_output_filename = f'{results_path}/Y_test.npy'
+X_test = np.load(data_input_filename)
+Y_test = np.load(data_output_filename)
+
+class PathDataReader(CalibrationDataReader):
+    def __init__(self, calibration_data, input_name):
+        self.input_name = input_name
+        # Criamos uma lista de dicionários onde cada imagem ganha a dimensão de batch (1, 64, 64, 1)
+        self.data_list = [
+            {input_name: img[np.newaxis, ...].astype(np.float32)} 
+            for img in calibration_data
+        ]
+        self.data = iter(self.data_list)
+
+    def get_next(self):
+        return next(self.data, None)
+dr = PathDataReader(X_test, 'entrada_mapa')
+
+model_path_fp32 = f'{checkpoint_filepath}.onnx'
+model_path_int8 = f'{checkpoint_filepath}_quantized_static.onnx'
+# Perform dynamic quantization
+quantize_static(
+    model_input=model_path_fp32,
+    model_output=model_path_int8,
+    calibration_data_reader=dr,
+    per_channel=False,
+    reduce_range=False,
+    weight_type=QuantType.QInt8
+)
