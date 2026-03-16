@@ -17,8 +17,10 @@
 #define HEIGHT 64
 #define DIFFICULTY 1
 
+#define START_ID 99999
+#define END_ID 100000
+
 FILE *fptr;
-const char filename[] = "result.csv";
 
 void printArray(int16_t array[HEIGHT][WIDTH])
 {
@@ -287,28 +289,29 @@ int main(int argc, char **argv)
     // uint32_t end1 = 0;
     // uint32_t end2 = 0;
     // printf("start = %d\n", start);
+    char filename[50];
+    snprintf(filename, sizeof(filename), "result_W%03dxH%03d_D%02d_S%06d_E%06d.csv", WIDTH, HEIGHT, DIFFICULTY, START_ID, END_ID);
+    
+    fptr = fopen(filename, "w+");
+    fprintf(fptr, "id,difficulty,start_x,start_y,end_x,end_y,height,width,map\n");
 
-    if (access(filename, F_OK) == 0)
-    {
-        fptr = fopen(filename, "w+");
-        fprintf(fptr, "id,difficulty,start_x,start_y,end_x,end_y,height,width,map\n");
-    }
-    else
-    {
-        printf("!!!!!!!!!!!!!!\n");
-        fptr = fopen(filename, "a+");
-    }
+    // if (access(filename, F_OK) == 0)
+    // {
+        
+    // }
+    // else
+    // {
+    //     printf("!!!!!!!!!!!!!!\n");
+    //     fptr = fopen(filename, "a+");
+    // }
 
     // mingw_gettimeofday(&time, NULL);
     // int64_t s1 = (int64_t)(time.tv_sec) * 1000;
     // printf("start = %lli\n", s1);
 
     uint8_t ret = 0;
-    uint32_t start_id = 0;
-    uint32_t quant_id = 10000;
-    uint32_t end_id = start_id + quant_id;
 
-    for (uint32_t id = start_id; id < end_id; id++)
+    for (uint32_t id = START_ID; id < END_ID; id++)
     {
         // Defini posição de inicio e final
         // Levar em consideração o wall
@@ -329,5 +332,5 @@ int main(int argc, char **argv)
     // printf("end1 = %d\n", end1 - start);
     // printf("end2 = %d\n", end2 - end1);
 
-    return 0;
+    return ret;
 }
