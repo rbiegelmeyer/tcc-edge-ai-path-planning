@@ -177,6 +177,58 @@ def build_unet1(input_size):
 
     return model
 
+def build_simplified_unet(input_size):
+    """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
+
+    inputs = Input(input_size)
+
+    # Let's create a function for one step of the encoder block, so as to increase the reusability when making custom unets
+    def encoder_block(filters, inputs):
+        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
+        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
+        p = MaxPooling2D(pool_size=(2, 2), padding='same')(x)
+        return x, p  # p provides the input to the next encoder block and s provides the context/features to the symmetrically opposte decoder block
+    # Baseline layer is just a bunch on Convolutional Layers to extract high level features from the downsampled Image
+
+    def baseline_layer(filters, inputs):
+        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
+        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
+        return x
+    # Decoder Block
+
+    def decoder_block(filters, connections, inputs):
+        x = Conv2DTranspose(filters, kernel_size=(2, 2), padding='same', activation='relu', strides=2)(inputs)
+        skip_connections = concatenate([x, connections], axis=-1)
+        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(skip_connections)
+        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
+        return x
+
+    # defining the encoder
+    s1, p1 = encoder_block(64, inputs=inputs)
+    s2, p2 = encoder_block(128, inputs=p1)
+
+    # Setting up the baseline
+    baseline = baseline_layer(256, p2)
+
+    # Defining the entire decoder
+    d3 = decoder_block(128, s2, baseline)
+    d4 = decoder_block(64, s1, d3)
+
+    # Saída: Um canal de saída, ativado por Sigmoid para máscara binária (0 ou 1)
+    output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d4)
+
+    model = Model(inputs=inputs, outputs=output, name='Light_Unet')
+    # model = keras.Sequential([(inputs=inputs, outputs=output, name='Unet')
+
+    # Compilação: Binary Cross-Entropy é ideal para a máscara binária
+    model.compile(optimizer='adam',
+                  loss='binary_crossentropy',
+                  metrics=['accuracy', iou_metric])
+
+    model.summary()
+
+    return model
+
 def build_unet2(input_size):
     """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
 
@@ -259,7 +311,7 @@ print(f"Valor Máximo em X_train (deve ser ~1.0): {np.max(X_train)}")
 # Dimensões do seu mapa
 H, W = X_train.shape[1], X_train.shape[2]
 
-# Construção da U-NET
+# Construção da U-Net
 model = build_unet1(input_size=(H, W, 1))
 
 # Results Path
@@ -269,10 +321,13 @@ print(results_path)
 # Cria o diretorio caso não exista
 os.makedirs(results_path, exist_ok=True)
 
+np.save(f'{results_path}/X_train.npy', X_train)
+np.save(f'{results_path}/Y_train.npy', Y_train)
+np.save(f'{results_path}/X_val.npy', X_val)
+np.save(f'{results_path}/Y_val.npy', Y_val)
 np.save(f'{results_path}/X_test.npy', X_test)
 np.save(f'{results_path}/Y_test.npy', Y_test)
 np.savez(f'{results_path}/Z_test.npz', X_test, Y_test)
-
 
 ##########################################################################
 ############################## Treinamento ###############################
@@ -319,11 +374,11 @@ print(f"Loss: {loss:.4f} | Acurácia de Pixel: {acc:.4f} | IoU (Jaccard): {iou:.
 
 
 # --- Visualização de Amostras de Teste ---
-def visualize_results(X_data, Y_true, model, num_samples=3):
+def visualize_results(X_data, Y_true, model, num_samples=3, prefixe=''):
     """Visualiza o input, o caminho real e a previsão do modelo."""
 
     predictions = model.predict(X_data[:num_samples])
-    images_result = f'{results_path}/test/{model.name}'
+    images_result = f'{results_path}/test/{prefixe}{model.name}'
     print(f"Dados de teste gerados em: {images_result}")
     os.makedirs(images_result, exist_ok=True)
 
