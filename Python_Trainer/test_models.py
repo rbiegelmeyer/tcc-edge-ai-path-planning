@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-results_path = './results/result_W064xH064_D01_S000000_E001000'
+results_path = './results/result_W064xH064_D01_S000000_E005000'
 model_basename = f'{results_path}/best_path_finder_Unet1'
 model_name = f'{model_basename}.tflite'
 data_input_filename = f'{results_path}/X_test.npy'
@@ -130,6 +130,59 @@ def run_onnx_quantized_static_inference(X_data):
 
     return outputs[0]
 
+def identificar_modelo(caminho):
+    with open(caminho, 'rb') as f:
+        header = f.read(100) # Lê os primeiros 100 bytes
+        
+    if b'HDF5' in header:
+        return "Keras (H5)"
+    elif b'TFL3' in header:
+        return "TFLite"
+    elif b'onnx' in header.lower() or b'ir_version' in header.lower():
+        return "ONNX"
+    else:
+        return "Formato desconhecido"
+
+def visualize_tflite_results(X_data, Y_true, model_path, position=(0, 0, 0), results_path, num_samples=5):
+    """Visualiza o input, o caminho real e a previsão do modelo."""
+    images_result = f'{results_path}/test_models/'
+    print(f"Dados de teste gerados em: {images_result}")
+    os.makedirs(images_result, exist_ok=True)
+
+    model_type = identificar_modelo(model_path)
+    if model_type == "Keras (H5)":
+        model = tf.keras.models.load_model(
+            keras_model_path,
+            custom_objects={'iou_metric': iou_metric} # Recarregar a métrica customizada
+        )
+        predictions = model.predict(X_data)
+
+    elif model_type == "TFLite":
+        interpreter = tf.lite.Interpreter(model_path=model_path)    # Carrega o modelo TFLite
+        interpreter.allocate_tensors()
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        preds = []
+        for i in range(len(X_data)):
+            # Preparar input (Batch, H, W, C)
+            input_tensor = np.expand_dims(X_data[i], axis=0).astype(np.float32)
+            interpreter.set_tensor(input_details[0]['index'], input_tensor)
+            interpreter.invoke()
+            
+            output = interpreter.get_tensor(output_details[0]['index'])
+            preds.append(output[0]) # Remove dimensão de batch do resultado
+
+        predictions = np.array(preds)
+
+    elif model_type == "ONNX":
+        session = ort.InferenceSession(model_path, providers=['CUDAExecutionProvider'])  # Carrega o modelo ONNX
+        input_name = session.get_inputs()[0].name
+        predictions = session.run(None, {input_name: X_test})[0]
+        
+    else:
+        return 0
+
+
 
 # --- Visualização de Amostras de Teste ---
 def visualize_tflite_results(X_data, Y_true, keras_results, tflite_results, tflite_quantized_results, onnx_results, onnx_quantized_static_results, results_path, num_samples=5):
@@ -212,6 +265,9 @@ print("\nAvaliando modelo ONNX no Conjunto de Teste...")
 onnx_results = run_onnx_inference(X_test)
 
 print("\nAvaliando modelo ONNX Quantized Static no Conjunto de Teste...")
+onnx_quantized_static_results = run_onnx_quantized_static_inference(X_test)
+
+print("\nAvaliando modelo Student ONNX Quantized Static no Conjunto de Teste...")
 onnx_quantized_static_results = run_onnx_quantized_static_inference(X_test)
 
 visualize_tflite_results(
