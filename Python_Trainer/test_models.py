@@ -143,136 +143,157 @@ def identificar_modelo(caminho):
     else:
         return "Formato desconhecido"
 
-def visualize_tflite_results(X_data, Y_true, model_path, position=(0, 0, 0), results_path, num_samples=5):
+def visualize_tflite_results(X_data, Y_true, model_folder_path):
     """Visualiza o input, o caminho real e a previsão do modelo."""
-    images_result = f'{results_path}/test_models/'
+    images_result = f'{model_folder_path}/test_models/'
     print(f"Dados de teste gerados em: {images_result}")
     os.makedirs(images_result, exist_ok=True)
 
-    model_type = identificar_modelo(model_path)
-    if model_type == "Keras (H5)":
-        model = tf.keras.models.load_model(
-            keras_model_path,
-            custom_objects={'iou_metric': iou_metric} # Recarregar a métrica customizada
-        )
-        predictions = model.predict(X_data)
+    # get all ai models in folder
+    ai_models = [f for f in os.listdir(model_folder_path) if f.endswith(('.h5', '.tflite', '.onnx'))]
+    print(f"Modelos encontrados: {ai_models}")
 
-    elif model_type == "TFLite":
-        interpreter = tf.lite.Interpreter(model_path=model_path)    # Carrega o modelo TFLite
-        interpreter.allocate_tensors()
-        input_details = interpreter.get_input_details()
-        output_details = interpreter.get_output_details()
-        preds = []
-        for i in range(len(X_data)):
-            # Preparar input (Batch, H, W, C)
-            input_tensor = np.expand_dims(X_data[i], axis=0).astype(np.float32)
-            interpreter.set_tensor(input_details[0]['index'], input_tensor)
-            interpreter.invoke()
+    for model_file in ai_models:
+        model_path = os.path.join(model_folder_path, model_file)
+
+        model_type = identificar_modelo(model_path)
+        if model_type == "Keras (H5)":
+            print(f"Processando modelo Keras: {model_file}")
+            model = tf.keras.models.load_model(
+                model_path,
+                custom_objects={'iou_metric': iou_metric} # Recarregar a métrica customizada
+            )
+            predictions = model.predict(X_data)
+
+        elif model_type == "TFLite":
+            print(f"Processando modelo TFLite: {model_file}")
+            interpreter = tf.lite.Interpreter(model_path=model_path)    # Carrega o modelo TFLite
+            interpreter.allocate_tensors()
+            input_details = interpreter.get_input_details()
+            output_details = interpreter.get_output_details()
+            preds = []
+            for i in range(len(X_data)):
+                # Preparar input (Batch, H, W, C)
+                input_tensor = np.expand_dims(X_data[i], axis=0).astype(np.float32)
+                interpreter.set_tensor(input_details[0]['index'], input_tensor)
+                interpreter.invoke()
+                
+                output = interpreter.get_tensor(output_details[0]['index'])
+                preds.append(output[0]) # Remove dimensão de batch do resultado
+
+            predictions = np.array(preds)
+
+        elif model_type == "ONNX":
+            print(f"Processando modelo ONNX: {model_file}")
+            session = ort.InferenceSession(model_path, providers=['CUDAExecutionProvider'])  # Carrega o modelo ONNX
+            input_name = session.get_inputs()[0].name
+            predictions = session.run(None, {input_name: X_test})[0]
             
-            output = interpreter.get_tensor(output_details[0]['index'])
-            preds.append(output[0]) # Remove dimensão de batch do resultado
+        else:
+            continue  # Pula arquivos de formato desconhecido
 
-        predictions = np.array(preds)
-
-    elif model_type == "ONNX":
-        session = ort.InferenceSession(model_path, providers=['CUDAExecutionProvider'])  # Carrega o modelo ONNX
-        input_name = session.get_inputs()[0].name
-        predictions = session.run(None, {input_name: X_test})[0]
-        
-    else:
-        return 0
-
-
-
-# --- Visualização de Amostras de Teste ---
-def visualize_tflite_results(X_data, Y_true, keras_results, tflite_results, tflite_quantized_results, onnx_results, onnx_quantized_static_results, results_path, num_samples=5):
-    """Visualiza o input, o caminho real e a previsão do modelo."""
-
-    images_result = f'{results_path}/test_models/'
-    print(f"Dados de teste gerados em: {images_result}")
-    os.makedirs(images_result, exist_ok=True)
-
-    for i in range(num_samples):
-        plt.figure()
-
-        # 1. Input Map (Início, Fim, Obstáculos)
-        # plt.subplot(2, 5, 1)
-        # # O squeeze remove a dimensão do canal (50, 100, 1) -> (50, 100)
-        # plt.imshow(X_data[i].squeeze(), cmap='gray')
-        # # plt.title('Input\n(Início/Fim/Obstáculos)')
-        # plt.title('Input')
-        # plt.axis('off')
-
-        # 2. Ground Truth (Caminho Real A*)
-        plt.subplot(2, 4, 1)
-        plt.imshow(Y_true[i].squeeze(), cmap='hot')
-        # plt.title('Target\n(Caminho Real A*)')
-        plt.title('Target')
-        plt.axis('off')
-
-        # 3. Prediction Keras (Caminho Previsto pela CNN)
-        plt.subplot(2, 4, 2)
-        # Binarizar a previsão (valores > 0.5 são considerados 'caminho')
-        predicted_path = (keras_results[i].squeeze() > 0.5).astype(np.float32)
+        predicted_path = (predictions[i].squeeze() > 0.5).astype(np.float32)
         plt.imshow(predicted_path, cmap='hot')
-        plt.title('Previsão\nKeras')
-        plt.axis('off')
-
-        # 3. Prediction TFLite(Caminho Previsto pela CNN)
-        plt.subplot(2, 4, 3)
-        predicted_path = (tflite_results[i].squeeze() > 0.5).astype(np.float32)
-        plt.imshow(predicted_path, cmap='hot')
-        plt.title('Previsão\nTFLite')
-        plt.axis('off')
-
-        # 3. Prediction TFLite(Caminho Previsto pela CNN)
-        plt.subplot(2, 4, 7)
-        predicted_path = (tflite_quantized_results[i].squeeze() > 0.5).astype(np.float32)
-        plt.imshow(predicted_path, cmap='hot')
-        plt.title('Previsão\nTFLite Quantized')
-        plt.axis('off')
-
-        # 3. Prediction ONNX (Caminho Previsto pela CNN)
-        plt.subplot(2, 4, 4)
-        predicted_path = (onnx_results[i].squeeze() > 0.5).astype(np.float32)
-        plt.imshow(predicted_path, cmap='hot')
-        plt.title('Previsão\nONNX')
-        plt.axis('off')
-
-        plt.subplot(2, 4, 8)
-        predicted_path = (onnx_quantized_static_results[i].squeeze() > 0.5).astype(np.float32)
-        plt.imshow(predicted_path, cmap='hot')
-        plt.title('Previsão\nONNX Quantized Static')
-        plt.axis('off')
+        plt.title(model_file)
 
         plt.savefig(f'{images_result}/mapa_predicao_{i}.png')
         plt.close()  # Libera a memória da figura
+    
+
+
+# # --- Visualização de Amostras de Teste ---
+# def visualize_tflite_results(X_data, Y_true, keras_results, tflite_results, tflite_quantized_results, onnx_results, onnx_quantized_static_results, results_path, num_samples=5):
+#     """Visualiza o input, o caminho real e a previsão do modelo."""
+
+#     images_result = f'{results_path}/test_models/'
+#     print(f"Dados de teste gerados em: {images_result}")
+#     os.makedirs(images_result, exist_ok=True)
+
+#     for i in range(num_samples):
+#         plt.figure()
+
+#         # 1. Input Map (Início, Fim, Obstáculos)
+#         # plt.subplot(2, 5, 1)
+#         # # O squeeze remove a dimensão do canal (50, 100, 1) -> (50, 100)
+#         # plt.imshow(X_data[i].squeeze(), cmap='gray')
+#         # # plt.title('Input\n(Início/Fim/Obstáculos)')
+#         # plt.title('Input')
+#         # plt.axis('off')
+
+#         # 2. Ground Truth (Caminho Real A*)
+#         plt.subplot(2, 4, 1)
+#         plt.imshow(Y_true[i].squeeze(), cmap='hot')
+#         # plt.title('Target\n(Caminho Real A*)')
+#         plt.title('Target')
+#         plt.axis('off')
+
+#         # 3. Prediction Keras (Caminho Previsto pela CNN)
+#         plt.subplot(2, 4, 2)
+#         # Binarizar a previsão (valores > 0.5 são considerados 'caminho')
+#         predicted_path = (keras_results[i].squeeze() > 0.5).astype(np.float32)
+#         plt.imshow(predicted_path, cmap='hot')
+#         plt.title('Previsão\nKeras')
+#         plt.axis('off')
+
+#         # 3. Prediction TFLite(Caminho Previsto pela CNN)
+#         plt.subplot(2, 4, 3)
+#         predicted_path = (tflite_results[i].squeeze() > 0.5).astype(np.float32)
+#         plt.imshow(predicted_path, cmap='hot')
+#         plt.title('Previsão\nTFLite')
+#         plt.axis('off')
+
+#         # 3. Prediction TFLite(Caminho Previsto pela CNN)
+#         plt.subplot(2, 4, 7)
+#         predicted_path = (tflite_quantized_results[i].squeeze() > 0.5).astype(np.float32)
+#         plt.imshow(predicted_path, cmap='hot')
+#         plt.title('Previsão\nTFLite Quantized')
+#         plt.axis('off')
+
+#         # 3. Prediction ONNX (Caminho Previsto pela CNN)
+#         plt.subplot(2, 4, 4)
+#         predicted_path = (onnx_results[i].squeeze() > 0.5).astype(np.float32)
+#         plt.imshow(predicted_path, cmap='hot')
+#         plt.title('Previsão\nONNX')
+#         plt.axis('off')
+
+#         plt.subplot(2, 4, 8)
+#         predicted_path = (onnx_quantized_static_results[i].squeeze() > 0.5).astype(np.float32)
+#         plt.imshow(predicted_path, cmap='hot')
+#         plt.title('Previsão\nONNX Quantized Static')
+#         plt.axis('off')
+
+#         plt.savefig(f'{images_result}/mapa_predicao_{i}.png')
+#         plt.close()  # Libera a memória da figura
 
 # Visualizar uma porcentagem das amostras
 num_viz = int(len(X_test) * 0.15)
 X_test = X_test[0:num_viz]
 
-print("\nAvaliando modelo Keras no Conjunto de Teste...")
-keras_results = run_keras_inference(X_test)
+# print("\nAvaliando modelo Keras no Conjunto de Teste...")
+# keras_results = run_keras_inference(X_test)
 
-print("\nAvaliando modelo TFLite no Conjunto de Teste...")
-tflite_results = run_tflite_inference(X_test)
+# print("\nAvaliando modelo TFLite no Conjunto de Teste...")
+# tflite_results = run_tflite_inference(X_test)
 
-print("\nAvaliando modelo TFLite Quantized no Conjunto de Teste...")
-tflite_quantized_results = run_tflite_quantized_inference(X_test)
+# print("\nAvaliando modelo TFLite Quantized no Conjunto de Teste...")
+# tflite_quantized_results = run_tflite_quantized_inference(X_test)
 
-print("\nAvaliando modelo ONNX no Conjunto de Teste...")
-onnx_results = run_onnx_inference(X_test)
+# print("\nAvaliando modelo ONNX no Conjunto de Teste...")
+# onnx_results = run_onnx_inference(X_test)
 
-print("\nAvaliando modelo ONNX Quantized Static no Conjunto de Teste...")
-onnx_quantized_static_results = run_onnx_quantized_static_inference(X_test)
+# print("\nAvaliando modelo ONNX Quantized Static no Conjunto de Teste...")
+# onnx_quantized_static_results = run_onnx_quantized_static_inference(X_test)
 
-print("\nAvaliando modelo Student ONNX Quantized Static no Conjunto de Teste...")
-onnx_quantized_static_results = run_onnx_quantized_static_inference(X_test)
+# print("\nAvaliando modelo Student ONNX Quantized Static no Conjunto de Teste...")
+# onnx_quantized_static_results = run_onnx_quantized_static_inference(X_test)
 
-visualize_tflite_results(
-    X_test, Y_test, 
-    keras_results,
-    tflite_results, tflite_quantized_results,
-    onnx_results, onnx_quantized_static_results,
-    results_path, num_viz)
+# visualize_tflite_results(
+#     X_test, Y_test, 
+#     keras_results,
+#     tflite_results, tflite_quantized_results,
+#     onnx_results, onnx_quantized_static_results,
+#     results_path, num_viz)
+
+
+
+visualize_tflite_results(X_test, Y_test, results_path)
