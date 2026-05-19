@@ -1,3 +1,5 @@
+# %%
+# Imports e setup
 import os
 import sys
 import numpy as np
@@ -9,17 +11,58 @@ matplotlib.use('Agg')
 
 import tensorflow as tf
 # print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
-from keras import layers
-import keras
+# from keras import layers
+# import keras
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D, concatenate, Dropout, Conv2DTranspose
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, concatenate, Dropout, Conv2DTranspose
 from tensorflow.keras.models import Model
 
 from sklearn.model_selection import train_test_split
 
-# from iou_metric import iou_metric_tf
+
+# 0 = Todos os logs (padrão)
+# 1 = Filtra logs INFO
+# 2 = Filtra logs INFO e WARNING
+# 3 = Filtra logs INFO, WARNING e ERROR
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# Evita logs detalhados do driver da GPU
+os.environ['AUTOGRAPH_VERBOSITY'] = '0'
+
+# Desativa a inicialização duplicada de plugins XLA/CUDA (o "pulo do gato")
+os.environ['TF_CPP_MAX_VLOG_LEVEL'] = '0'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 import logging
+# Desativa avisos do absl (usado internamente pelo TF)
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+
+np.set_printoptions(threshold=sys.maxsize, precision=4, suppress=True)
+
+
+
+MAP_OBSTACLE = 1
+MAP_PATH     = 2
+
+def preprocess_data(df):
+    H, W = df['height'].iloc[0], df['width'].iloc[0]
+    difficulty = df['difficulty'].iloc[0]
+    n = len(df)
+
+    X = np.zeros((n, H, W, 3), dtype=np.float32)  # [obstáculos, início, fim]
+    Y = np.zeros((n, H, W, 1), dtype=np.float32)
+
+    for i, row in enumerate(df.itertuples(index=False)):
+        map_array = np.frombuffer(row.map.encode(), dtype=np.uint8) - ord('0')
+        map_array = map_array.reshape(H, W)
+
+        X[i, :, :, 0] = (map_array == MAP_OBSTACLE)        # canal obstáculos
+        X[i, row.start_y, row.start_x, 1] = 1.0            # canal início
+        X[i, row.end_y,   row.end_x,   2] = 1.0            # canal fim
+
+        Y[i, :, :, 0] = (map_array == MAP_PATH)
+
+    return X, Y, difficulty
 
 def iou_metric(y_true, y_pred, smooth=1e-6):
     """
@@ -38,114 +81,37 @@ def iou_metric(y_true, y_pred, smooth=1e-6):
     Returns:
         Um valor escalar entre 0 e 1, onde 1 indica uma sobreposição perfeita.
     """
-
+    
     intersection = tf.reduce_sum(y_true * y_pred)
     union = tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) - intersection
     iou = (intersection + smooth) / (union + smooth)
     return iou
 
-# 0 = Todos os logs (padrão)
-# 1 = Filtra logs INFO
-# 2 = Filtra logs INFO e WARNING
-# 3 = Filtra logs INFO, WARNING e ERROR
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# Let's create a function for one step of the encoder block, so as to increase the reusability when making custom unets
+def encoder_block(filters, inputs):
+    x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
+    x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
+    p = MaxPooling2D(pool_size=(2, 2), padding='same')(x)
+    return x, p  # p provides the input to the next encoder block and s provides the context/features to the symmetrically opposte decoder block
+# Baseline layer is just a bunch on Convolutional Layers to extract high level features from the downsampled Image
 
-# Evita logs detalhados do driver da GPU
-os.environ['AUTOGRAPH_VERBOSITY'] = '0'
+def baseline_layer(filters, inputs):
+    x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
+    x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
+    return x
+# Decoder Block
 
-# Desativa a inicialização duplicada de plugins XLA/CUDA (o "pulo do gato")
-os.environ['TF_CPP_MAX_VLOG_LEVEL'] = '0'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+def decoder_block(filters, connections, inputs):
+    x = Conv2DTranspose(filters, kernel_size=(2, 2), padding='same', activation='relu', strides=2)(inputs)
+    skip_connections = concatenate([x, connections], axis=-1)
+    x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(skip_connections)
+    x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
+    return x
 
-# Desativa avisos do absl (usado internamente pelo TF)
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
-
-np.set_printoptions(threshold=sys.maxsize, precision=4, suppress=True)
-
-
-def preprocess_data(df):
-    """
-    Transforma os dados brutos do CSV em tensores de Input (X) e Target (Y).
-    X: Mapa com Obstáculos, Início (3) e Fim (4).
-    Y: Máscara Binária do Caminho A* (1 para caminho, 0 para o resto).
-    """
-    X_list = []
-    Y_list = []
-    # TODO Melhora a forma como adquirir dado da dificuldade
-    difficulty = df.head(1)['difficulty'][0]
-
-    for index, row in df.iterrows():
-        H, W = row['height'], row['width']
-        start_x, start_y = row['start_x'], row['start_y']
-        end_x, end_y = row['end_x'], row['end_y']
-        map_str = row['map']
-
-        # 1. Converter a string do mapa para um array 2D
-        # Assumindo que a string tem H*W caracteres e é lida linha por linha
-        map_array = np.array(list(map_str), dtype=int).reshape(H, W)
-
-        # 2. Criar a Máscara do Caminho (Target Y)
-        # Assumimos que '2' é o marcador do caminho percorrido pelo A*
-        path_mask = (map_array == 2).astype(np.float32)
-        # print(path_mask)
-        Y_list.append(path_mask)
-
-        # 3. Criar o Mapa de Entrada (Input X)
-        input_map = map_array.copy()
-
-        # Codificação do Input X:
-        # Obstáculo ('1') -> 1
-        # Espaço Livre ('0') -> 0
-        # Caminho ('2') é apagado ou deixado como 0 (pois é o que a CNN deve prever)
-        input_map[input_map == 2] = 0
-
-        # Marcar Início e Fim com valores distintos (codificação one-hot-like)
-        # Usamos 3 e 4 para serem normalizados depois
-        input_map[start_y, start_x] = 3
-        input_map[end_y, end_x] = 4
-
-        X_list.append(input_map)
-
-    # Converter para arrays NumPy
-    X = np.array(X_list, dtype=np.float32)
-    Y = np.array(Y_list, dtype=np.float32)
-
-    # Adicionar o canal (necessário para CNNs 2D: [batch, height, width, channels])
-    X = np.expand_dims(X, axis=-1)
-    Y = np.expand_dims(Y, axis=-1)
-
-    # 4. Normalização (importante)
-    # Normaliza o Input X para o range [0, 1]
-    # O valor máximo codificado é 4 (para o ponto final)
-    X_normalized = X / 4.0
-
-    return X_normalized, Y, difficulty
-
-def build_unet1(input_size):
+def build_unet(input_size):
     """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
 
     inputs = Input(input_size)
-
-    # Let's create a function for one step of the encoder block, so as to increase the reusability when making custom unets
-    def encoder_block(filters, inputs):
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-        p = MaxPooling2D(pool_size=(2, 2), padding='same')(x)
-        return x, p  # p provides the input to the next encoder block and s provides the context/features to the symmetrically opposte decoder block
-    # Baseline layer is just a bunch on Convolutional Layers to extract high level features from the downsampled Image
-
-    def baseline_layer(filters, inputs):
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-        return x
-    # Decoder Block
-
-    def decoder_block(filters, connections, inputs):
-        x = Conv2DTranspose(filters, kernel_size=(2, 2), padding='same', activation='relu', strides=2)(inputs)
-        skip_connections = concatenate([x, connections], axis=-1)
-        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(skip_connections)
-        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
-        return x
 
     # defining the encoder
     s1, p1 = encoder_block(64, inputs=inputs)
@@ -182,27 +148,6 @@ def build_simplified_unet(input_size):
 
     inputs = Input(input_size)
 
-    # Let's create a function for one step of the encoder block, so as to increase the reusability when making custom unets
-    def encoder_block(filters, inputs):
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-        p = MaxPooling2D(pool_size=(2, 2), padding='same')(x)
-        return x, p  # p provides the input to the next encoder block and s provides the context/features to the symmetrically opposte decoder block
-    # Baseline layer is just a bunch on Convolutional Layers to extract high level features from the downsampled Image
-
-    def baseline_layer(filters, inputs):
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-        return x
-    # Decoder Block
-
-    def decoder_block(filters, connections, inputs):
-        x = Conv2DTranspose(filters, kernel_size=(2, 2), padding='same', activation='relu', strides=2)(inputs)
-        skip_connections = concatenate([x, connections], axis=-1)
-        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(skip_connections)
-        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
-        return x
-
     # defining the encoder
     s1, p1 = encoder_block(64, inputs=inputs)
     s2, p2 = encoder_block(128, inputs=p1)
@@ -229,65 +174,9 @@ def build_simplified_unet(input_size):
 
     return model
 
-def build_unet2(input_size):
-    """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
-
-    model = keras.Sequential(name="Unet2")
-    model.add(Input(input_size))
-
-    # DownScalling
-    model.add(Conv2D(64, kernel_size=(3, 3), activation='relu', padding='same'))
-    model.add(Conv2D(64, kernel_size=(3, 3), activation='relu', padding='same'))
-    model.add(MaxPooling2D((2, 2), padding='same'))
-
-    model.add(Conv2D(128, kernel_size=(3, 3), activation='relu', padding='same'))
-    model.add(Conv2D(128, kernel_size=(3, 3), activation='relu', padding='same'))
-    model.add(MaxPooling2D((2, 2), padding='same'))
-
-    model.add(Conv2D(256, kernel_size=(3, 3), activation='relu', padding='same'))
-    model.add(Conv2D(256, kernel_size=(3, 3), activation='relu', padding='same'))
-    model.add(MaxPooling2D((2, 2), padding='same'))
-
-    model.add(Conv2D(512, kernel_size=(3, 3), activation='relu', padding='same'))
-    model.add(Conv2D(512, kernel_size=(3, 3), activation='relu', padding='same'))
-    model.add(MaxPooling2D((2, 2), padding='same'))
-
-    # Base
-    model.add(Conv2D(1024, kernel_size=(3, 3), activation='relu', padding='same'))
-    model.add(Conv2D(1024, kernel_size=(3, 3), activation='relu', padding='same'))
-
-    # UpScalling
-    model.add(Conv2DTranspose(512, kernel_size=(2, 2), padding='same', activation='relu', strides=2))
-    model.add(Conv2D(512, kernel_size=(2, 2), padding='same', activation='relu'))
-    model.add(Conv2D(512, kernel_size=(2, 2), padding='same', activation='relu'))
-
-    model.add(Conv2DTranspose(256, kernel_size=(2, 2), padding='same', activation='relu', strides=2))
-    model.add(Conv2D(256, kernel_size=(2, 2), padding='same', activation='relu'))
-    model.add(Conv2D(256, kernel_size=(2, 2), padding='same', activation='relu'))
-
-    model.add(Conv2DTranspose(128, kernel_size=(2, 2), padding='same', activation='relu', strides=2))
-    model.add(Conv2D(128, kernel_size=(2, 2), padding='same', activation='relu'))
-    model.add(Conv2D(128, kernel_size=(2, 2), padding='same', activation='relu'))
-
-    model.add(Conv2DTranspose(64, kernel_size=(2, 2), padding='same', activation='relu', strides=2))
-    model.add(Conv2D(64, kernel_size=(2, 2), padding='same', activation='relu'))
-    model.add(Conv2D(64, kernel_size=(2, 2), padding='same', activation='relu'))
-
-    model.add(Conv2D(1, kernel_size=(1, 1), padding='same', activation='sigmoid'))
-
-    model.summary()
-
-    # Compilação: Binary Cross-Entropy é ideal para a máscara binária
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy', iou_metric])
-
-    return model
-
-
-# Carrega data frame
+# %% Pré-processamento
 # df_raw = pd.read_csv('../AStar/result.csv')
-df_filename = '../AStar/result_W064xH064_D01_S000000_E005000.csv'
+df_filename = '../AStar/result_W064xH064_D05_S000000_E005000.csv'
 # df_filename = '../AStar/result_W064xH064_D01_S000000_E010000.csv'
 df_raw = pd.read_csv(df_filename)
 # Remove map duplicados
@@ -297,13 +186,16 @@ df_raw = df_raw.drop_duplicates(subset='map', keep='first')
 X, Y, difficulty = preprocess_data(df_raw)
 
 # Divisão dos dados
+# Train:        70%
+# Test:         15%
+# Validation:   15%
 X_train, X_temp, Y_train, Y_temp = train_test_split(
     X, Y, test_size=0.3, random_state=42)
 X_val, X_test, Y_val, Y_test = train_test_split(
     X_temp, Y_temp, test_size=0.5, random_state=42)
-print(f'Tamanho de treinamento: {len(X_train)}')
-print(f'Tamanho de validação: {len(X_val)}')
-print(f'Tamanho de teste: {len(X_test)}')
+print(f'Tamanho de treinamento: {len(X_train):5} ({len(Y_train)/len(Y)*100:.2f}%)')
+print(f'Tamanho de validação:   {len(X_val):5} ({len(Y_val)/len(Y)*100:.2f}%)')
+print(f'Tamanho de teste:       {len(X_test):5} ({len(Y_test)/len(Y)*100:.2f}%)')
 print(f"Shape do X_train (Input): {X_train.shape}")
 print(f"Shape do Y_train (Target/Máscara): {Y_train.shape}")
 print(f"Valor Máximo em X_train (deve ser ~1.0): {np.max(X_train)}")
@@ -312,7 +204,7 @@ print(f"Valor Máximo em X_train (deve ser ~1.0): {np.max(X_train)}")
 H, W = X_train.shape[1], X_train.shape[2]
 
 # Construção da U-Net
-model = build_unet1(input_size=(H, W, 1))
+model = build_unet(input_size=(H, W, 3))
 
 # Results Path
 basename_for_results = os.path.basename(df_filename).split('.')[0]
@@ -327,11 +219,12 @@ np.save(f'{results_path}/X_val.npy', X_val)
 np.save(f'{results_path}/Y_val.npy', Y_val)
 np.save(f'{results_path}/X_test.npy', X_test)
 np.save(f'{results_path}/Y_test.npy', Y_test)
-np.savez(f'{results_path}/Z_test.npz', X_test, Y_test)
+# np.savez(f'{results_path}/Z_test.npz', X_test, Y_test)
 
-##########################################################################
-############################## Treinamento ###############################
-##########################################################################
+# %% Treinamento
+#########################################
+############## Treinamento ##############
+#########################################
 # Definir callbacks de segurança
 # 1. Parada Antecipada: Monitora a perda de validação. Se não melhorar por 10 épocas, para.
 early_stopping = EarlyStopping(monitor='val_iou_metric',
@@ -341,11 +234,11 @@ early_stopping = EarlyStopping(monitor='val_iou_metric',
                                mode='max')
 
 # 2. Checkpoint do Modelo: Salva o melhor modelo que alcançou a menor 'val_loss'.
-checkpoint_filepath = f'{results_path}/best_path_finder_{model.name}.keras'
+checkpoint_filepath = f'{results_path}/path_finder_{model.name}.keras'
 model_checkpoint = ModelCheckpoint(checkpoint_filepath,
                                    monitor='val_iou_metric',  # Foca no IoU de validação
                                    save_best_only=True,
-                                   verbose=1,
+                                   verbose=0,
                                    mode='max')
 
 # Treinamento
@@ -356,10 +249,8 @@ history = model.fit(
     epochs=1000,  # Um número razoavelmente alto, EarlyStopping vai parar
     batch_size=64,  # Ajustar conforme a memória da GPU
     callbacks=[early_stopping, model_checkpoint],
-    verbose=2  # Exibe menos detalhes por época
+    verbose=1
 )
-
-
 # Carregar o melhor modelo para avaliação
 best_model = tf.keras.models.load_model(
     checkpoint_filepath,
@@ -372,7 +263,7 @@ print("\nAvaliação Final no Conjunto de Teste:")
 loss, acc, iou = best_model.evaluate(X_test, Y_test, verbose=1)
 print(f"Loss: {loss:.4f} | Acurácia de Pixel: {acc:.4f} | IoU (Jaccard): {iou:.4f}")
 
-
+# %% Avaliação
 # --- Visualização de Amostras de Teste ---
 def visualize_results(X_data, Y_true, model, num_samples=3, prefixe=''):
     """Visualiza o input, o caminho real e a previsão do modelo."""
