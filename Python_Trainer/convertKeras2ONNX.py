@@ -19,8 +19,8 @@ def get_W_H_D(text):
 
     return W, H, D
 
-results_path = f'./results/result_W064xH064_D01_S000000_E001000'
-checkpoint_filepath = f'{results_path}/best_path_finder_Unet1'
+results_path = f'./results/result_W064xH064_D00_S000000_E005000'
+checkpoint_filepath = f'{results_path}/student_distilled'
 
 W, H, D = get_W_H_D(results_path)
 
@@ -34,9 +34,9 @@ model = tf.keras.models.load_model(
 
 # Precisa disso para a conversão ser possivel
 model.output_names = ['output']
-model.build([None, 64, 64, 1]) # Depende do UpScalling
+model.build([None, 64, 64, 3]) # Depende do UpScalling
 
-input_signature=[tf.TensorSpec([None, H, W, 1], tf.float32, name='entrada_mapa')]
+input_signature=[tf.TensorSpec([None, H, W, 3], tf.float32, name='entrada_mapa')]
 # Use from_function for tf functions
 onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature, opset=13)
 onnx.save(onnx_model, f'{checkpoint_filepath}.onnx')

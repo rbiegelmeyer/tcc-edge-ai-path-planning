@@ -7,7 +7,7 @@ from iou_metric import iou_metric
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
-results_path = f'./results/result_W064xH064_D01_S000000_E001000'
+results_path = f'./results/result_W064xH064_D01_S000000_E005000'
 checkpoint_filepath = f'{results_path}/best_path_finder_Unet1'
 
 # Sample training data.

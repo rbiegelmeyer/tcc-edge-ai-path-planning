@@ -1,7 +1,9 @@
+# %%
 import os
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D, concatenate, Dropout, Conv2DTranspose
 from tensorflow.keras.models import Model
 
@@ -19,6 +21,9 @@ class Distiller(keras.Model):
         self.distillation_loss_fn = distillation_loss_fn
         self.alpha = alpha # Peso para a perda do aluno vs destilação
         self.temperature = temperature
+
+    def call(self, x, training=False):
+        return self.student(x, training=training)
 
     def train_step(self, data):
         x, y = data
@@ -53,7 +58,25 @@ class Distiller(keras.Model):
             metric.update_state(y, student_predictions)
 
         return {m.name: m.result() for m in self.metrics}
-    
+
+    def test_step(self, data):
+        x, y = data
+
+        teacher_predictions = self.teacher(x, training=False)
+        student_predictions = self.student(x, training=False)
+
+        student_loss = self.student_loss_fn(y, student_predictions)
+        distillation_loss = self.distillation_loss_fn(
+            tf.nn.sigmoid(teacher_predictions / self.temperature),
+            tf.nn.sigmoid(student_predictions / self.temperature),
+        )
+        loss = self.alpha * student_loss + (1 - self.alpha) * distillation_loss
+
+        for metric in self.metrics:
+            metric.update_state(y, student_predictions)
+
+        return {**{m.name: m.result() for m in self.metrics}, "loss": loss}
+
 
 def build_simplified_unet(input_size):
     """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
@@ -138,17 +161,21 @@ def iou_metric(y_true, y_pred, smooth=1e-6):
 
 
 results_path = f'./results/result_W064xH064_D01_S000000_E005000'
-checkpoint_filepath = f'{results_path}/best_path_finder_Unet1.keras'
+checkpoint_filepath = f'{results_path}/path_finder_Unet.keras'
 
 data_test_input_filename = f'{results_path}/X_test.npy'
 data_test_output_filename = f'{results_path}/Y_test.npy'
 data_train_input_filename = f'{results_path}/X_train.npy'
 data_train_output_filename = f'{results_path}/Y_train.npy'
+data_val_input_filename = f'{results_path}/X_val.npy'
+data_val_output_filename = f'{results_path}/Y_val.npy'
 
-X_test = np.load(data_test_input_filename)
-Y_test = np.load(data_test_output_filename)
-X_train = np.load(data_train_input_filename)
-Y_train = np.load(data_train_output_filename)
+X_test =  np.load(f'{results_path}/X_test.npy')
+Y_test =  np.load(f'{results_path}/Y_test.npy')
+X_train = np.load(f'{results_path}/X_train.npy')
+Y_train = np.load(f'{results_path}/Y_train.npy')
+X_val =   np.load(f'{results_path}/X_val.npy')
+Y_val =   np.load(f'{results_path}/Y_val.npy')
 
 H, W = X_train.shape[1], X_train.shape[2]
 
@@ -160,7 +187,7 @@ best_model = tf.keras.models.load_model(
 )
 
 # Construção da U-Net Simplificada
-student_model = build_simplified_unet(input_size=(H, W, 1))
+student_model = build_simplified_unet(input_size=(H, W, 3))
 
 distiller = Distiller(student=student_model, teacher=best_model)
 
@@ -173,10 +200,27 @@ distiller.compile(
     temperature=5
 )
 
-# Treinamento
-distiller.fit(X_train, Y_train, epochs=30)
+early_stopping = EarlyStopping(monitor='val_iou_metric',
+                               patience=25,
+                               verbose=1,
+                               restore_best_weights=True,
+                               mode='max')
 
-distiller.student.save(f'{results_path}/student_distilled.keras')
+checkpoint_filepath = f'{results_path}/student_distilled.keras'
+model_checkpoint = ModelCheckpoint(checkpoint_filepath,
+                                   monitor='val_iou_metric',  # Foca no IoU de validação
+                                   save_best_only=True,
+                                   verbose=0,
+                                   mode='max')
+
+# Treinamento
+distiller.fit(X_train, Y_train, 
+              validation_data=(X_val, Y_val),
+              epochs=200,
+              batch_size=64,
+              callbacks=[early_stopping, model_checkpoint])
+
+# distiller.student.save(f'{results_path}/student_distilled.keras')
 
 
 # --- Visualização de Amostras de Teste ---
@@ -216,5 +260,6 @@ def visualize_results(X_data, Y_true, model, num_samples=3, prefixe=''):
         plt.savefig(f'{images_result}/mapa_predicao_{i}.png')
         plt.close()  # Libera a memória da figura
 
-num_samples = int(len(X_test) * 0.15)
+num_samples = int(len(X_test) * 0.30)
 visualize_results(X_test, Y_test, student_model, num_samples=num_samples, prefixe='distilled_')
+# %%

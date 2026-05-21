@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-results_path = './results/result_W064xH064_D01_S000000_E005000'
+results_path = './results/result_W064xH064_D05_S000000_E005000'
 model_basename = f'{results_path}/best_path_finder_Unet1'
 model_name = f'{model_basename}.tflite'
 data_input_filename = f'{results_path}/X_test.npy'
@@ -19,116 +19,6 @@ data_output_filename = f'{results_path}/Y_test.npy'
 
 X_test = np.load(data_input_filename)
 Y_test = np.load(data_output_filename)
-
-def run_keras_inference(X_data):
-
-    keras_model_path = f'{model_basename}.keras'
-
-    # Carregar o melhor modelo para avaliação
-    model = tf.keras.models.load_model(
-        keras_model_path,
-        custom_objects={'iou_metric': iou_metric} # Recarregar a métrica customizada
-    )
-
-    predictions = model.predict(X_data)
-
-    # Avaliação final no conjunto de Teste
-    # print("\nAvaliação Final no Conjunto de Teste:")
-    # loss, acc, iou = model.evaluate(X_test, Y_test, verbose=0)
-    # print(f"Loss: {loss:.4f} | Acurácia de Pixel: {acc:.4f} | IoU (Jaccard): {iou:.4f}")
-
-    return predictions
-
-
-def run_tflite_inference(X_data):
-    """Executa a inferência para um conjunto de dados."""
-
-    tflite_model_path = f'{model_basename}.tflite'
-
-    # Preparação do Interpretador TFLite
-    interpreter = tf.lite.Interpreter(model_path=tflite_model_path)
-    interpreter.allocate_tensors()
-
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-
-    preds = []
-    for i in range(len(X_data)):
-        # Preparar input (Batch, H, W, C)
-        input_tensor = np.expand_dims(X_data[i], axis=0).astype(np.float32)
-        interpreter.set_tensor(input_details[0]['index'], input_tensor)
-        interpreter.invoke()
-        
-        output = interpreter.get_tensor(output_details[0]['index'])
-        preds.append(output[0]) # Remove dimensão de batch do resultado
-
-    return np.array(preds)
-
-def run_tflite_quantized_inference(X_data):
-    """Executa a inferência para um conjunto de dados."""
-
-    tflite_model_path = f'{model_basename}_quantized.tflite'
-
-    # Preparação do Interpretador TFLite
-    interpreter = tf.lite.Interpreter(model_path=tflite_model_path)
-    interpreter.allocate_tensors()
-
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-
-    preds = []
-    for i in range(len(X_data)):
-        # Preparar input (Batch, H, W, C)
-        input_tensor = np.expand_dims(X_data[i], axis=0).astype(np.float32)
-        interpreter.set_tensor(input_details[0]['index'], input_tensor)
-        interpreter.invoke()
-        
-        output = interpreter.get_tensor(output_details[0]['index'])
-        preds.append(output[0]) # Remove dimensão de batch do resultado
-
-    return np.array(preds)
-
-def run_onnx_inference(X_data):
-    # 1. Criar a sessão de inferência
-    # Para GPU, use providers=['CUDAExecutionProvider']
-    onnx_model_path = f'{model_basename}.onnx'
-    session = ort.InferenceSession(onnx_model_path, providers=['CUDAExecutionProvider'])
-
-    # 2. Descobrir os nomes e formatos de entrada (input)
-    input_name = session.get_inputs()[0].name
-    # input_shape = session.get_inputs()[0].shape
-    # print(f"Nome da entrada: {input_name}, Formato: {input_shape}")
-
-    # output_name = session.get_outputs()[0].name
-    # output_shape = session.get_outputs()[0].shape
-    # print(f"Nome da saída: {output_name}, Formato: {output_shape}")
-
-    # 4. Rodar a inferência
-    # print("Rodando a inferência...")
-    outputs = session.run(None, {input_name: X_test})
-
-    return outputs[0]
-
-def run_onnx_quantized_static_inference(X_data):
-    # 1. Criar a sessão de inferência
-    # Para GPU, use providers=['CUDAExecutionProvider']
-    onnx_model_path = f'{model_basename}_quantized_static.onnx'
-    session = ort.InferenceSession(onnx_model_path, providers=['CUDAExecutionProvider'])
-
-    # 2. Descobrir os nomes e formatos de entrada (input)
-    input_name = session.get_inputs()[0].name
-    # input_shape = session.get_inputs()[0].shape
-    # print(f"Nome da entrada: {input_name}, Formato: {input_shape}")
-
-    # output_name = session.get_outputs()[0].name
-    # output_shape = session.get_outputs()[0].shape
-    # print(f"Nome da saída: {output_name}, Formato: {output_shape}")
-
-    # 4. Rodar a inferência
-    # print("Rodando a inferência...")
-    outputs = session.run(None, {input_name: X_test})
-
-    return outputs[0]
 
 def identificar_modelo(caminho):
     with open(caminho, 'rb') as f:
@@ -142,59 +32,93 @@ def identificar_modelo(caminho):
         return "ONNX"
     else:
         return "Formato desconhecido"
+    
 
-def visualize_tflite_results(X_data, Y_true, model_folder_path):
+def run_model(model_path, X_data):
+    model_file = os.path.basename(model_path)
+    model_type = identificar_modelo(model_path)
+
+    if model_type == "Keras (H5)":
+        print(f"Processando modelo Keras: {model_file}")
+        model = tf.keras.models.load_model(
+            model_path,
+            custom_objects={'iou_metric': iou_metric}
+        )
+        predictions = model.predict(X_data)
+
+    elif model_type == "TFLite":
+        print(f"Processando modelo TFLite: {model_file}")
+        interpreter = tf.lite.Interpreter(model_path=model_path)
+        interpreter.allocate_tensors()
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+
+        # TFLite não suporta inferência em batch — processa uma amostra por vez
+        output_shape = output_details[0]['shape'][1:]  # (H, W, C) sem a dimensão de batch
+        predictions = np.empty((len(X_data), *output_shape), dtype=np.float32)
+        for i, sample in enumerate(X_data):
+            interpreter.set_tensor(input_details[0]['index'], sample[np.newaxis].astype(np.float32))
+            interpreter.invoke()
+            predictions[i] = interpreter.get_tensor(output_details[0]['index'])[0]
+
+    elif model_type == "ONNX":
+        print(f"Processando modelo ONNX: {model_file}")
+        # Fallback para CPU caso CUDA não esteja disponível no ambiente
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        session = ort.InferenceSession(model_path, providers=providers)
+        input_name = session.get_inputs()[0].name
+        # ONNX suporta batch — processa todo o dataset de uma vez
+        predictions = session.run(None, {input_name: X_data.astype(np.float32)})[0]
+
+    else:
+        return None  # Formato de modelo não suportado
+
+    return predictions
+
+def visualize_tflite_results(X_data, Y_true, model_folder_path, num_samples=5):
     """Visualiza o input, o caminho real e a previsão do modelo."""
+
     images_result = f'{model_folder_path}/test_models/'
     print(f"Dados de teste gerados em: {images_result}")
     os.makedirs(images_result, exist_ok=True)
 
-    # get all ai models in folder
-    ai_models = [f for f in os.listdir(model_folder_path) if f.endswith(('.h5', '.tflite', '.onnx'))]
+    # get only ai models names in the folder
+    model_folder_path = os.path.abspath(model_folder_path)
+    
+    ai_models = [f for f in os.listdir(model_folder_path) if f.endswith(('.keras', '.tflite', '.onnx'))]
+    # remove not file
+    ai_models = [f for f in ai_models if os.path.isfile(os.path.join(model_folder_path, f))]
     print(f"Modelos encontrados: {ai_models}")
 
-    for model_file in ai_models:
-        model_path = os.path.join(model_folder_path, model_file)
+    number_of_models = len(ai_models)
 
-        model_type = identificar_modelo(model_path)
-        if model_type == "Keras (H5)":
-            print(f"Processando modelo Keras: {model_file}")
-            model = tf.keras.models.load_model(
-                model_path,
-                custom_objects={'iou_metric': iou_metric} # Recarregar a métrica customizada
-            )
-            predictions = model.predict(X_data)
+    results_of_models = []
 
-        elif model_type == "TFLite":
-            print(f"Processando modelo TFLite: {model_file}")
-            interpreter = tf.lite.Interpreter(model_path=model_path)    # Carrega o modelo TFLite
-            interpreter.allocate_tensors()
-            input_details = interpreter.get_input_details()
-            output_details = interpreter.get_output_details()
-            preds = []
-            for i in range(len(X_data)):
-                # Preparar input (Batch, H, W, C)
-                input_tensor = np.expand_dims(X_data[i], axis=0).astype(np.float32)
-                interpreter.set_tensor(input_details[0]['index'], input_tensor)
-                interpreter.invoke()
-                
-                output = interpreter.get_tensor(output_details[0]['index'])
-                preds.append(output[0]) # Remove dimensão de batch do resultado
+    for j, model_file in enumerate(ai_models):
 
-            predictions = np.array(preds)
+        model_path = os.path.join(model_folder_path, model_file) 
+        predictions = run_model(model_path, X_data)  
 
-        elif model_type == "ONNX":
-            print(f"Processando modelo ONNX: {model_file}")
-            session = ort.InferenceSession(model_path, providers=['CUDAExecutionProvider'])  # Carrega o modelo ONNX
-            input_name = session.get_inputs()[0].name
-            predictions = session.run(None, {input_name: X_test})[0]
-            
-        else:
-            continue  # Pula arquivos de formato desconhecido
+        if predictions is None:
+            continue
 
-        predicted_path = (predictions[i].squeeze() > 0.5).astype(np.float32)
-        plt.imshow(predicted_path, cmap='hot')
-        plt.title(model_file)
+        results_of_models.append({
+            'name': model_file,
+            'predictions': predictions
+        })
+
+    for i in range(num_samples):
+        plt.figure()
+
+        for j in range(len(results_of_models)):
+            model_path = results_of_models[j]['name']
+            predictions = results_of_models[0]['predictions']
+            predicted_path = (predictions[i].squeeze() > 0.5).astype(np.float32)
+
+            plt.subplot(number_of_models, 1, j + 1)
+            plt.imshow(predicted_path, cmap='hot')
+            plt.title(model_path)
+            plt.axis('off')
 
         plt.savefig(f'{images_result}/mapa_predicao_{i}.png')
         plt.close()  # Libera a memória da figura
@@ -269,31 +193,7 @@ def visualize_tflite_results(X_data, Y_true, model_folder_path):
 num_viz = int(len(X_test) * 0.15)
 X_test = X_test[0:num_viz]
 
-# print("\nAvaliando modelo Keras no Conjunto de Teste...")
-# keras_results = run_keras_inference(X_test)
-
-# print("\nAvaliando modelo TFLite no Conjunto de Teste...")
-# tflite_results = run_tflite_inference(X_test)
-
-# print("\nAvaliando modelo TFLite Quantized no Conjunto de Teste...")
-# tflite_quantized_results = run_tflite_quantized_inference(X_test)
-
-# print("\nAvaliando modelo ONNX no Conjunto de Teste...")
-# onnx_results = run_onnx_inference(X_test)
-
-# print("\nAvaliando modelo ONNX Quantized Static no Conjunto de Teste...")
-# onnx_quantized_static_results = run_onnx_quantized_static_inference(X_test)
-
-# print("\nAvaliando modelo Student ONNX Quantized Static no Conjunto de Teste...")
-# onnx_quantized_static_results = run_onnx_quantized_static_inference(X_test)
-
-# visualize_tflite_results(
-#     X_test, Y_test, 
-#     keras_results,
-#     tflite_results, tflite_quantized_results,
-#     onnx_results, onnx_quantized_static_results,
-#     results_path, num_viz)
 
 
 
-visualize_tflite_results(X_test, Y_test, results_path)
+visualize_tflite_results(X_test, Y_test, results_path, num_viz)

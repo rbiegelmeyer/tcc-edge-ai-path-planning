@@ -53,7 +53,7 @@ def preprocess_data(df):
     Y = np.zeros((n, H, W, 1), dtype=np.float32)
 
     for i, row in enumerate(df.itertuples(index=False)):
-        map_array = np.frombuffer(row.map.encode(), dtype=np.uint8) - ord('0')
+        map_array = np.frombuffer(str(row.map).zfill(H * W).encode(), dtype=np.uint8) - ord('0')
         map_array = map_array.reshape(H, W)
 
         X[i, :, :, 0] = (map_array == MAP_OBSTACLE)        # canal obstáculos
@@ -87,29 +87,30 @@ def iou_metric(y_true, y_pred, smooth=1e-6):
     iou = (intersection + smooth) / (union + smooth)
     return iou
 
-# Let's create a function for one step of the encoder block, so as to increase the reusability when making custom unets
-def encoder_block(filters, inputs):
-    x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-    x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-    p = MaxPooling2D(pool_size=(2, 2), padding='same')(x)
-    return x, p  # p provides the input to the next encoder block and s provides the context/features to the symmetrically opposte decoder block
-# Baseline layer is just a bunch on Convolutional Layers to extract high level features from the downsampled Image
-
-def baseline_layer(filters, inputs):
-    x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-    x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-    return x
-# Decoder Block
-
-def decoder_block(filters, connections, inputs):
-    x = Conv2DTranspose(filters, kernel_size=(2, 2), padding='same', activation='relu', strides=2)(inputs)
-    skip_connections = concatenate([x, connections], axis=-1)
-    x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(skip_connections)
-    x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
-    return x
 
 def build_unet(input_size):
     """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
+
+    # Let's create a function for one step of the encoder block, so as to increase the reusability when making custom unets
+    def encoder_block(filters, inputs):
+        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
+        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
+        p = MaxPooling2D(pool_size=(2, 2), padding='same')(x)
+        return x, p  # p provides the input to the next encoder block and s provides the context/features to the symmetrically opposte decoder block
+    # Baseline layer is just a bunch on Convolutional Layers to extract high level features from the downsampled Image
+
+    def baseline_layer(filters, inputs):
+        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
+        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
+        return x
+    # Decoder Block
+
+    def decoder_block(filters, connections, inputs):
+        x = Conv2DTranspose(filters, kernel_size=(2, 2), padding='same', activation='relu', strides=2)(inputs)
+        skip_connections = concatenate([x, connections], axis=-1)
+        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(skip_connections)
+        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
+        return x
 
     inputs = Input(input_size)
 
@@ -131,7 +132,7 @@ def build_unet(input_size):
     # Saída: Um canal de saída, ativado por Sigmoid para máscara binária (0 ou 1)
     output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d4)
 
-    model = Model(inputs=inputs, outputs=output, name='Unet1')
+    model = Model(inputs=inputs, outputs=output, name='Unet')
     # model = keras.Sequential([(inputs=inputs, outputs=output, name='Unet')
 
     # Compilação: Binary Cross-Entropy é ideal para a máscara binária
@@ -143,40 +144,10 @@ def build_unet(input_size):
 
     return model
 
-def build_simplified_unet(input_size):
-    """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
-
-    inputs = Input(input_size)
-
-    # defining the encoder
-    s1, p1 = encoder_block(64, inputs=inputs)
-    s2, p2 = encoder_block(128, inputs=p1)
-
-    # Setting up the baseline
-    baseline = baseline_layer(256, p2)
-
-    # Defining the entire decoder
-    d3 = decoder_block(128, s2, baseline)
-    d4 = decoder_block(64, s1, d3)
-
-    # Saída: Um canal de saída, ativado por Sigmoid para máscara binária (0 ou 1)
-    output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d4)
-
-    model = Model(inputs=inputs, outputs=output, name='Light_Unet')
-    # model = keras.Sequential([(inputs=inputs, outputs=output, name='Unet')
-
-    # Compilação: Binary Cross-Entropy é ideal para a máscara binária
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy', iou_metric])
-
-    model.summary()
-
-    return model
-
-# %% Pré-processamento
+# %%
+# Pré-processamento DataFrame
 # df_raw = pd.read_csv('../AStar/result.csv')
-df_filename = '../AStar/result_W064xH064_D05_S000000_E005000.csv'
+df_filename = '../AStar/result_W064xH064_D02_S000000_E100000.csv'
 # df_filename = '../AStar/result_W064xH064_D01_S000000_E010000.csv'
 df_raw = pd.read_csv(df_filename)
 # Remove map duplicados
@@ -221,11 +192,10 @@ np.save(f'{results_path}/X_test.npy', X_test)
 np.save(f'{results_path}/Y_test.npy', Y_test)
 # np.savez(f'{results_path}/Z_test.npz', X_test, Y_test)
 
-# %% Treinamento
-#########################################
-############## Treinamento ##############
-#########################################
-# Definir callbacks de segurança
+# %% 
+# Treinamento
+
+# Callbacks
 # 1. Parada Antecipada: Monitora a perda de validação. Se não melhorar por 10 épocas, para.
 early_stopping = EarlyStopping(monitor='val_iou_metric',
                                patience=50,
@@ -233,7 +203,7 @@ early_stopping = EarlyStopping(monitor='val_iou_metric',
                                restore_best_weights=True,
                                mode='max')
 
-# 2. Checkpoint do Modelo: Salva o melhor modelo que alcançou a menor 'val_loss'.
+# 2. Checkpoint do Modelo: Salva o melhor modelo que alcançou a maior 'val_iou_metric'.
 checkpoint_filepath = f'{results_path}/path_finder_{model.name}.keras'
 model_checkpoint = ModelCheckpoint(checkpoint_filepath,
                                    monitor='val_iou_metric',  # Foca no IoU de validação
@@ -316,7 +286,7 @@ def plot_training_results(history):
              label='Treino', color='blue', linewidth=2)
     ax1.plot(history.history['val_iou_metric'],
              label='Validação', color='orange', linewidth=2)
-    ax1.set_title('Evolução do IoU por Época')
+    ax1.set_title(f'Evolução do IoU por Época ({basename_for_results})')
     ax1.set_xlabel('Épocas')
     ax1.set_ylabel('IoU')
     ax1.legend()
@@ -327,7 +297,7 @@ def plot_training_results(history):
              color='blue', linewidth=2)
     ax2.plot(history.history['val_loss'],
              label='Validação', color='orange', linewidth=2)
-    ax2.set_title('Evolução da Loss por Época')
+    ax2.set_title(f'Evolução da Loss por Época ({basename_for_results})')
     ax2.set_xlabel('Épocas')
     ax2.set_ylabel('Binary Crossentropy')
     ax2.legend()
@@ -342,3 +312,4 @@ def plot_training_results(history):
 
 # Chame a função após o model.fit()
 plot_training_results(history)
+# %%
