@@ -3,6 +3,13 @@
 AStar/astar
 AStar/*.csv
 
+
+*/results
+
+MCU
+Bibliografia
+
+
 .venv
 *.npy
 *.keras
