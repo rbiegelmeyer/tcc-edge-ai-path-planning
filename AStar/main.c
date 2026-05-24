@@ -301,7 +301,7 @@ void generate_dataset(int16_t width, int16_t height, int16_t difficulty,
 
 int main(int argc, char **argv)
 {
-    for (int i = 2; i <3; i++)
+    for (int i = 0; i < 10; i++)
     {
         generate_dataset(64, 64, i, 0, 50000);
     }
