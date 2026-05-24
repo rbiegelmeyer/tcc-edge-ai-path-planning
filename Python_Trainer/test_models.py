@@ -4,7 +4,7 @@ import numpy as np
 
 import tensorflow as tf
 import onnxruntime as ort
-from iou_metric import iou_metric
+from metrics import iou_metric, continuity_metric, path_quality_metric
 
 
 import matplotlib

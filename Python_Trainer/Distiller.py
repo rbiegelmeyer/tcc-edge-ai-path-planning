@@ -1,13 +1,15 @@
-# %%
 import os
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D, concatenate, Dropout, Conv2DTranspose
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, concatenate, Conv2DTranspose
 from tensorflow.keras.models import Model
 
 import matplotlib.pyplot as plt
+
+from Metrics import iou_metric, continuity_metric, path_quality_metric
+
 
 class Distiller(keras.Model):
     def __init__(self, student, teacher):
@@ -19,7 +21,7 @@ class Distiller(keras.Model):
         super(Distiller, self).compile(optimizer=optimizer, metrics=metrics)
         self.student_loss_fn = student_loss_fn
         self.distillation_loss_fn = distillation_loss_fn
-        self.alpha = alpha # Peso para a perda do aluno vs destilação
+        self.alpha = alpha
         self.temperature = temperature
 
     def call(self, x, training=False):
@@ -27,41 +29,26 @@ class Distiller(keras.Model):
 
     def train_step(self, data):
         x, y = data
-
-        # 1. Inferência do Professor (não treinamos o professor aqui)
         teacher_predictions = self.teacher(x, training=False)
 
         with tf.GradientTape() as tape:
-            # 2. Inferência do Aluno
             student_predictions = self.student(x, training=True)
-
-            # 3. Loss padrão (Aluno vs Gabarito Real)
             student_loss = self.student_loss_fn(y, student_predictions)
-
-            # 4. Loss de Destilação (Aluno vs Professor com Temperatura)
-            # Aplicamos a suavização nas previsões
             distillation_loss = self.distillation_loss_fn(
                 tf.nn.sigmoid(teacher_predictions / self.temperature),
                 tf.nn.sigmoid(student_predictions / self.temperature),
             )
-
-            # Loss Final: Equilíbrio entre aprender o real e imitar o mestre
             loss = self.alpha * student_loss + (1 - self.alpha) * distillation_loss
 
-        # 5. Atualização dos pesos do Aluno
-        trainable_vars = self.student.trainable_variables
-        gradients = tape.gradient(loss, trainable_vars)
-        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+        gradients = tape.gradient(loss, self.student.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.student.trainable_variables))
 
-        # Atualizar métricas
         for metric in self.metrics:
             metric.update_state(y, student_predictions)
-
         return {m.name: m.result() for m in self.metrics}
 
     def test_step(self, data):
         x, y = data
-
         teacher_predictions = self.teacher(x, training=False)
         student_predictions = self.student(x, training=False)
 
@@ -74,192 +61,119 @@ class Distiller(keras.Model):
 
         for metric in self.metrics:
             metric.update_state(y, student_predictions)
-
         return {**{m.name: m.result() for m in self.metrics}, "loss": loss}
 
 
-def build_simplified_unet(input_size):
-    """Constrói a arquitetura U-Net, otimizada para mapas 2D."""
-
+def build_student(input_size):
     inputs = Input(input_size)
 
-    # Let's create a function for one step of the encoder block, so as to increase the reusability when making custom unets
-    def encoder_block(filters, inputs):
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-        p = MaxPooling2D(pool_size=(2, 2), padding='same')(x)
-        return x, p  # p provides the input to the next encoder block and s provides the context/features to the symmetrically opposte decoder block
-    # Baseline layer is just a bunch on Convolutional Layers to extract high level features from the downsampled Image
+    def encoder_block(filters, x):
+        x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
+        x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
+        return x, MaxPooling2D((2, 2), padding='same')(x)
 
-    def baseline_layer(filters, inputs):
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(inputs)
-        x = Conv2D(filters, kernel_size=(3, 3), padding='same', strides=1, activation='relu')(x)
-        return x
-    # Decoder Block
+    def baseline_layer(filters, x):
+        x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
+        return Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
 
-    def decoder_block(filters, connections, inputs):
-        x = Conv2DTranspose(filters, kernel_size=(2, 2), padding='same', activation='relu', strides=2)(inputs)
-        skip_connections = concatenate([x, connections], axis=-1)
-        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(skip_connections)
-        x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
-        return x
+    def decoder_block(filters, skip, x):
+        x = Conv2DTranspose(filters, (2, 2), padding='same', activation='relu', strides=2)(x)
+        x = concatenate([x, skip], axis=-1)
+        x = Conv2D(filters, (2, 2), padding='same', activation='relu')(x)
+        return Conv2D(filters, (2, 2), padding='same', activation='relu')(x)
 
-    # defining the encoder
-    s1, p1 = encoder_block(16, inputs=inputs)
-    s2, p2 = encoder_block(32, inputs=p1)
-    s3, p3 = encoder_block(64, inputs=p2)
-    s4, p4 = encoder_block(128, inputs=p3)
+    s1, p1 = encoder_block(16,  inputs)
+    s2, p2 = encoder_block(32,  p1)
+    s3, p3 = encoder_block(64,  p2)
+    s4, p4 = encoder_block(128, p3)
 
-    # Setting up the baseline
-    baseline = baseline_layer(256, p4)
+    base = baseline_layer(256, p4)
 
-    # Defining the entire decoder
-    d1 = decoder_block(128, s4, baseline)
-    d2 = decoder_block(64, s3, d1)
-    d3 = decoder_block(32, s2, d2)
-    d4 = decoder_block(16, s1, d3)
+    d1 = decoder_block(128, s4, base)
+    d2 = decoder_block(64,  s3, d1)
+    d3 = decoder_block(32,  s2, d2)
+    d4 = decoder_block(16,  s1, d3)
 
-    # Saída: Um canal de saída, ativado por Sigmoid para máscara binária (0 ou 1)
-    output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d4)
-
-    model = Model(inputs=inputs, outputs=output, name='Light_Unet')
-    # model = keras.Sequential([(inputs=inputs, outputs=output, name='Unet')
-
-    # Compilação: Binary Cross-Entropy é ideal para a máscara binária
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy', iou_metric])
-
+    output = Conv2D(1, (1, 1), activation='sigmoid')(d4)
+    model = Model(inputs=inputs, outputs=output, name='Student_Unet')
     model.summary()
-
     return model
 
-def iou_metric(y_true, y_pred, smooth=1e-6):
-    """
-    Calcula a métrica Intersection over Union (IoU), também conhecida como Índice de Jaccard.
 
-        Esta função avalia a sobreposição entre a máscara real (y_true) e a predição do modelo (y_pred).
-        É a métrica padrão para problemas de segmentação e planejamento de caminhos, pois penaliza
-        tanto os pixels não detectados (falsos negativos) quanto os pixels detectados incorretamente 
-        (falsos positivos).
+def distill(results_path, teacher_checkpoint_path):
+    X_train = np.load(f'{results_path}/X_train.npy')
+    Y_train = np.load(f'{results_path}/Y_train.npy')
+    X_val   = np.load(f'{results_path}/X_val.npy')
+    Y_val   = np.load(f'{results_path}/Y_val.npy')
+    X_test  = np.load(f'{results_path}/X_test.npy')
+    Y_test  = np.load(f'{results_path}/Y_test.npy')
 
-    Args:
-        y_true: Ground truth (gabarito real).
-        y_pred: Valores preditos pelo modelo (geralmente após ativação Sigmoid).
-        smooth: Pequena constante para evitar divisão por zero quando as áreas forem nulas.
+    H, W = X_train.shape[1], X_train.shape[2]
 
-    Returns:
-        Um valor escalar entre 0 e 1, onde 1 indica uma sobreposição perfeita.
-    """
+    teacher = tf.keras.models.load_model(
+        teacher_checkpoint_path,
+        custom_objects={'iou_metric': iou_metric,
+                        'continuity_metric': continuity_metric,
+                        'path_quality_metric': path_quality_metric}
+    )
 
-    intersection = tf.reduce_sum(y_true * y_pred)
-    union = tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) - intersection
-    iou = (intersection + smooth) / (union + smooth)
-    return iou
+    student = build_student(input_size=(H, W, 3))
 
+    distiller = Distiller(student=student, teacher=teacher)
+    distiller.compile(
+        optimizer=keras.optimizers.Adam(),
+        metrics=[iou_metric, continuity_metric, path_quality_metric],
+        student_loss_fn=keras.losses.BinaryCrossentropy(),
+        distillation_loss_fn=keras.losses.KLDivergence(),
+        alpha=0.1,
+        temperature=5,
+    )
 
+    early_stopping = EarlyStopping(monitor='val_path_quality_metric', patience=25,
+                                   verbose=1, restore_best_weights=True, mode='max')
 
+    print(f'\nIniciando destilação em: {results_path}')
+    distiller.fit(
+        X_train, Y_train,
+        validation_data=(X_val, Y_val),
+        epochs=200,
+        batch_size=64,
+        callbacks=[early_stopping],
+        verbose=2,
+    )
 
-results_path = f'./results/result_W064xH064_D01_S000000_E005000'
-checkpoint_filepath = f'{results_path}/path_finder_Unet.keras'
+    # restore_best_weights=True garante que student tem os pesos do melhor epoch aqui
+    student_checkpoint = f'{results_path}/student_distilled.keras'
+    student.save(student_checkpoint)
+    print(f'Modelo aluno salvo em: {student_checkpoint}')
 
-data_test_input_filename = f'{results_path}/X_test.npy'
-data_test_output_filename = f'{results_path}/Y_test.npy'
-data_train_input_filename = f'{results_path}/X_train.npy'
-data_train_output_filename = f'{results_path}/Y_train.npy'
-data_val_input_filename = f'{results_path}/X_val.npy'
-data_val_output_filename = f'{results_path}/Y_val.npy'
+    _visualize_results(X_test, Y_test, student, results_path,
+                       num_samples=max(1, int(len(X_test) * 0.30)))
 
-X_test =  np.load(f'{results_path}/X_test.npy')
-Y_test =  np.load(f'{results_path}/Y_test.npy')
-X_train = np.load(f'{results_path}/X_train.npy')
-Y_train = np.load(f'{results_path}/Y_train.npy')
-X_val =   np.load(f'{results_path}/X_val.npy')
-Y_val =   np.load(f'{results_path}/Y_val.npy')
-
-H, W = X_train.shape[1], X_train.shape[2]
-
-# Carregar o melhor modelo para avaliação
-best_model = tf.keras.models.load_model(
-    checkpoint_filepath,
-    # Recarregar a métrica customizada
-    custom_objects={'iou_metric': iou_metric}
-)
-
-# Construção da U-Net Simplificada
-student_model = build_simplified_unet(input_size=(H, W, 3))
-
-distiller = Distiller(student=student_model, teacher=best_model)
-
-distiller.compile(
-    optimizer=keras.optimizers.Adam(),
-    metrics=[iou_metric],
-    student_loss_fn=keras.losses.BinaryCrossentropy(),
-    distillation_loss_fn=keras.losses.KLDivergence(), # KL Divergence é padrão para destilação
-    alpha=0.1,
-    temperature=5
-)
-
-early_stopping = EarlyStopping(monitor='val_iou_metric',
-                               patience=25,
-                               verbose=1,
-                               restore_best_weights=True,
-                               mode='max')
-
-checkpoint_filepath = f'{results_path}/student_distilled.keras'
-model_checkpoint = ModelCheckpoint(checkpoint_filepath,
-                                   monitor='val_iou_metric',  # Foca no IoU de validação
-                                   save_best_only=True,
-                                   verbose=0,
-                                   mode='max')
-
-# Treinamento
-distiller.fit(X_train, Y_train, 
-              validation_data=(X_val, Y_val),
-              epochs=200,
-              batch_size=64,
-              callbacks=[early_stopping, model_checkpoint])
-
-# distiller.student.save(f'{results_path}/student_distilled.keras')
+    return student_checkpoint
 
 
-# --- Visualização de Amostras de Teste ---
-def visualize_results(X_data, Y_true, model, num_samples=3, prefixe=''):
-    """Visualiza o input, o caminho real e a previsão do modelo."""
-
+def _visualize_results(X_data, Y_true, model, results_path, num_samples=3):
     predictions = model.predict(X_data[:num_samples])
-    images_result = f'{results_path}/test/{prefixe}{model.name}'
-    print(f"Dados de teste gerados em: {images_result}")
+    images_result = f'{results_path}/test/distilled_{model.name}'
     os.makedirs(images_result, exist_ok=True)
 
     for i in range(num_samples):
-        plt.figure()
-
-        # 1. Input Map (Início, Fim, Obstáculos)
-        plt.subplot(1, 3, 1)
-        # O squeeze remove a dimensão do canal (50, 100, 1) -> (50, 100)
-        plt.imshow(X_data[i].squeeze(), cmap='gray')
-        plt.title('Input\n(Início/Fim/Obstáculos)')
-        plt.axis('off')
-
-        # 2. Ground Truth (Caminho Real A*)
-        plt.subplot(1, 3, 2)
-        plt.imshow(Y_true[i].squeeze(), cmap='hot')
-        plt.title('Target\n(Caminho Real A*)')
-        plt.axis('off')
-
-        # 3. Prediction (Caminho Previsto pela CNN)
-        plt.subplot(1, 3, 3)
-        # Binarizar a previsão (valores > 0.5 são considerados 'caminho')
-        predicted_path = (predictions[i].squeeze() > 0.5).astype(np.float32)
-        plt.imshow(predicted_path, cmap='hot')
-        plt.title('Previsão\n(Caminho da CNN)')
-        plt.axis('off')
-
-        # plt.show()
+        _, axes = plt.subplots(1, 3)
+        axes[0].imshow(X_data[i, :, :, 0], cmap='gray')
+        axes[0].set_title('Input')
+        axes[1].imshow(Y_true[i].squeeze(), cmap='hot')
+        axes[1].set_title('Target')
+        axes[2].imshow((predictions[i].squeeze() > 0.5).astype(np.float32), cmap='hot')
+        axes[2].set_title('Previsão (Aluno)')
+        for ax in axes:
+            ax.axis('off')
+        plt.tight_layout()
         plt.savefig(f'{images_result}/mapa_predicao_{i}.png')
-        plt.close()  # Libera a memória da figura
+        plt.close()
 
-num_samples = int(len(X_test) * 0.30)
-visualize_results(X_test, Y_test, student_model, num_samples=num_samples, prefixe='distilled_')
-# %%
+
+if __name__ == '__main__':
+    results_path = './results/result_W064xH064_D01_S000000_E005000'
+    teacher_ckpt = f'{results_path}/path_finder_Unet.keras'
+    distill(results_path, teacher_ckpt)

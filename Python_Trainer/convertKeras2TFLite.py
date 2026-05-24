@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import tensorflow as tf
-from iou_metric import iou_metric
+from Metrics import iou_metric, continuity_metric, path_quality_metric
 
 # Evita logs detalhados do driver da GPU
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
