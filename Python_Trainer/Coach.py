@@ -5,10 +5,6 @@ import sys
 import numpy as np
 import pandas as pd
 
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('Agg')
-
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, concatenate, Conv2DTranspose
@@ -16,7 +12,8 @@ from tensorflow.keras.models import Model
 
 from sklearn.model_selection import train_test_split
 
-from Metrics import iou_metric, continuity_metric, path_quality_metric
+from Metrics import iou_metric, continuity_metric, segment_count_metric, path_quality_metric, reachability_metric, bce_dice_loss
+from Visualizer import visualize_results, plot_training_results
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
@@ -87,9 +84,9 @@ def build_unet(input_size):
 
     output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d4)
     model = Model(inputs=inputs, outputs=output, name='Unet')
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy', iou_metric, continuity_metric, path_quality_metric])
+    model.compile(optimizer=tf.keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4),
+                  loss=bce_dice_loss,
+                  metrics=['accuracy', iou_metric, continuity_metric, segment_count_metric, path_quality_metric])
     model.summary()
     return model
 
@@ -106,9 +103,9 @@ def build_simplified_unet(input_size):
 
     output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d4)
     model = Model(inputs=inputs, outputs=output, name='Light_Unet')
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy', iou_metric, continuity_metric, path_quality_metric])
+    model.compile(optimizer=tf.keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4),
+                  loss=bce_dice_loss,
+                  metrics=['accuracy', iou_metric, continuity_metric, segment_count_metric, path_quality_metric])
     model.summary()
     return model
 
@@ -118,7 +115,7 @@ def build_simplified_unet(input_size):
 
 def train(df_filename):
     # --- Dados ---
-    df_raw = pd.read_csv(df_filename)
+    df_raw = pd.read_csv(df_filename, dtype={'map': str})
     df_raw = df_raw.drop_duplicates(subset='map', keep='first')
     X, Y, _ = preprocess_data(df_raw)
 
@@ -148,7 +145,7 @@ def train(df_filename):
     model = build_unet(input_size=(H, W, 3))
 
     checkpoint_filepath = f'{results_path}/path_finder_{model.name}.keras'
-    early_stopping = EarlyStopping(monitor='val_path_quality_metric', patience=50,
+    early_stopping = EarlyStopping(monitor='val_path_quality_metric', patience=25,
                                    verbose=1, restore_best_weights=True, mode='max')
     model_checkpoint = ModelCheckpoint(checkpoint_filepath, monitor='val_path_quality_metric',
                                        save_best_only=True, verbose=0, mode='max')
@@ -158,7 +155,7 @@ def train(df_filename):
     history = model.fit(
         X_train, Y_train,
         validation_data=(X_val, Y_val),
-        epochs=1000,
+        epochs=500,
         batch_size=64,
         callbacks=[early_stopping, model_checkpoint],
         verbose=2,
@@ -166,66 +163,28 @@ def train(df_filename):
 
     best_model = tf.keras.models.load_model(
         checkpoint_filepath,
-        custom_objects={'iou_metric': iou_metric,
+        custom_objects={'bce_dice_loss': bce_dice_loss,
+                        'iou_metric': iou_metric,
                         'continuity_metric': continuity_metric,
+                        'segment_count_metric': segment_count_metric,
                         'path_quality_metric': path_quality_metric}
     )
 
     # --- Avaliação ---
     print('\nAvaliação Final no Conjunto de Teste:')
-    loss, acc, iou, cont, quality = best_model.evaluate(X_test, Y_test, verbose=1)
-    print(f'Loss: {loss:.4f} | Acurácia: {acc:.4f} | IoU: {iou:.4f} | Continuidade: {cont:.4f} | Quality: {quality:.4f}')
+    loss, acc, iou, cont, seg, quality = best_model.evaluate(X_test, Y_test, verbose=1)
+    print(f'Loss: {loss:.4f} | Acurácia: {acc:.4f} | IoU: {iou:.4f} | '
+          f'Continuidade: {cont:.4f} | Segmentos: {seg:.4f} | Quality: {quality:.4f}')
 
-    _visualize_results(X_test, Y_test, best_model,
-                       num_samples=max(1, int(len(X_test) * 0.15)),
-                       results_path=results_path)
-    _plot_training_results(history, model.name, basename, results_path)
+    predictions_test = best_model.predict(X_test, verbose=0)
+    reach = reachability_metric(X_test, predictions_test)
+    print(f'Alcançabilidade (início→fim): {reach:.4f}')
+
+    visualize_results(X_test, Y_test, best_model, results_path,
+                      num_samples=max(1, int(len(X_test) * 0.15)))
+    plot_training_results(history, model.name, basename, results_path)
 
     return results_path, checkpoint_filepath
-
-
-def _visualize_results(X_data, Y_true, model, num_samples, results_path, prefixe=''):
-    predictions = model.predict(X_data[:num_samples])
-    images_result = f'{results_path}/test/{prefixe}{model.name}'
-    os.makedirs(images_result, exist_ok=True)
-
-    for i in range(num_samples):
-        _, axes = plt.subplots(1, 3)
-        axes[0].imshow(X_data[i, :, :, 0], cmap='gray')
-        axes[0].set_title('Input\n(Obstáculos)')
-        axes[1].imshow(Y_true[i].squeeze(), cmap='hot')
-        axes[1].set_title('Target\n(Caminho Real)')
-        axes[2].imshow((predictions[i].squeeze() > 0.5).astype(np.float32), cmap='hot')
-        axes[2].set_title('Previsão\n(CNN)')
-        for ax in axes:
-            ax.axis('off')
-        plt.tight_layout()
-        plt.savefig(f'{images_result}/mapa_predicao_{i}.png')
-        plt.close()
-
-
-def _plot_training_results(history, model_name, basename, results_path):
-    fig, axes = plt.subplots(1, 4, figsize=(24, 5))
-
-    specs = [
-        ('path_quality_metric', 'val_path_quality_metric', 'Path Quality (IoU + Continuidade)', 'Score'),
-        ('iou_metric',          'val_iou_metric',          f'IoU por Época ({basename})',        'IoU'),
-        ('continuity_metric',   'val_continuity_metric',   'Continuidade por Época',             'Score'),
-        ('loss',                'val_loss',                'Loss por Época',                     'Binary Crossentropy'),
-    ]
-
-    for ax, (train_key, val_key, title, ylabel) in zip(axes, specs):
-        ax.plot(history.history[train_key], label='Treino',    color='blue',   linewidth=2)
-        ax.plot(history.history[val_key],   label='Validação', color='orange', linewidth=2)
-        ax.set_title(title)
-        ax.set_xlabel('Épocas'); ax.set_ylabel(ylabel)
-        ax.legend(); ax.grid(True, linestyle='--', alpha=0.6)
-
-    plt.tight_layout()
-    images_result = f'{results_path}/test/{model_name}'
-    os.makedirs(images_result, exist_ok=True)
-    plt.savefig(f'{images_result}/graficos_treinamento.png', dpi=300)
-    plt.close()
 
 
 if __name__ == '__main__':

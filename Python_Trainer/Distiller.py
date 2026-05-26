@@ -1,4 +1,3 @@
-import os
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
@@ -6,9 +5,8 @@ from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, concatenate, Conv2DTranspose
 from tensorflow.keras.models import Model
 
-import matplotlib.pyplot as plt
-
-from Metrics import iou_metric, continuity_metric, path_quality_metric
+from Metrics import iou_metric, continuity_metric, segment_count_metric, path_quality_metric, reachability_metric, bce_dice_loss
+from Visualizer import visualize_results
 
 
 class Distiller(keras.Model):
@@ -112,8 +110,10 @@ def distill(results_path, teacher_checkpoint_path):
 
     teacher = tf.keras.models.load_model(
         teacher_checkpoint_path,
-        custom_objects={'iou_metric': iou_metric,
+        custom_objects={'bce_dice_loss': bce_dice_loss,
+                        'iou_metric': iou_metric,
                         'continuity_metric': continuity_metric,
+                        'segment_count_metric': segment_count_metric,
                         'path_quality_metric': path_quality_metric}
     )
 
@@ -121,22 +121,22 @@ def distill(results_path, teacher_checkpoint_path):
 
     distiller = Distiller(student=student, teacher=teacher)
     distiller.compile(
-        optimizer=keras.optimizers.Adam(),
-        metrics=[iou_metric, continuity_metric, path_quality_metric],
-        student_loss_fn=keras.losses.BinaryCrossentropy(),
+        optimizer=keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4),
+        metrics=[iou_metric, continuity_metric, segment_count_metric, path_quality_metric],
+        student_loss_fn=bce_dice_loss,
         distillation_loss_fn=keras.losses.KLDivergence(),
         alpha=0.1,
         temperature=5,
     )
 
-    early_stopping = EarlyStopping(monitor='val_path_quality_metric', patience=25,
+    early_stopping = EarlyStopping(monitor='val_path_quality_metric', patience=15,
                                    verbose=1, restore_best_weights=True, mode='max')
 
     print(f'\nIniciando destilação em: {results_path}')
     distiller.fit(
         X_train, Y_train,
         validation_data=(X_val, Y_val),
-        epochs=200,
+        epochs=120,
         batch_size=64,
         callbacks=[early_stopping],
         verbose=2,
@@ -147,30 +147,15 @@ def distill(results_path, teacher_checkpoint_path):
     student.save(student_checkpoint)
     print(f'Modelo aluno salvo em: {student_checkpoint}')
 
-    _visualize_results(X_test, Y_test, student, results_path,
-                       num_samples=max(1, int(len(X_test) * 0.30)))
+    predictions_test = student.predict(X_test, verbose=0)
+    reach = reachability_metric(X_test, predictions_test)
+    print(f'Alcançabilidade (início→fim): {reach:.4f}')
+
+    visualize_results(X_test, Y_test, student, results_path,
+                      num_samples=max(1, int(len(X_test) * 0.30)),
+                      prefix='distilled_', pred_label='Aluno')
 
     return student_checkpoint
-
-
-def _visualize_results(X_data, Y_true, model, results_path, num_samples=3):
-    predictions = model.predict(X_data[:num_samples])
-    images_result = f'{results_path}/test/distilled_{model.name}'
-    os.makedirs(images_result, exist_ok=True)
-
-    for i in range(num_samples):
-        _, axes = plt.subplots(1, 3)
-        axes[0].imshow(X_data[i, :, :, 0], cmap='gray')
-        axes[0].set_title('Input')
-        axes[1].imshow(Y_true[i].squeeze(), cmap='hot')
-        axes[1].set_title('Target')
-        axes[2].imshow((predictions[i].squeeze() > 0.5).astype(np.float32), cmap='hot')
-        axes[2].set_title('Previsão (Aluno)')
-        for ax in axes:
-            ax.axis('off')
-        plt.tight_layout()
-        plt.savefig(f'{images_result}/mapa_predicao_{i}.png')
-        plt.close()
 
 
 if __name__ == '__main__':
