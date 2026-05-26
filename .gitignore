@@ -14,3 +14,6 @@ Bibliografia
 *.npy
 *.keras
 __pycache__
+
+st_ai_ws
+tensorflow-onnx
