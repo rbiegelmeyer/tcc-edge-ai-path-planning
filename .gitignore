@@ -13,3 +13,4 @@ Bibliografia
 .venv
 *.npy
 *.keras
+__pycache__
