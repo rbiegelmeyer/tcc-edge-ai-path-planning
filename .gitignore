@@ -1,19 +1,16 @@
 .vscode
 
 AStar/astar
+AStar/astar_vis
 AStar/*.csv
 
-
-*/results
-
-MCU
+Anotacoes
 Bibliografia
+MCU
+Images
 
-
-.venv
-*.npy
-*.keras
-__pycache__
-
-st_ai_ws
-tensorflow-onnx
+Python_Trainer/.venv
+Python_Trainer/__pycache__
+Python_Trainer/st_ai_ws
+Python_Trainer/tensorflow-onnx
+Python_Trainer/results
