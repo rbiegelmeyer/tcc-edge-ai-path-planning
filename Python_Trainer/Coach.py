@@ -10,7 +10,6 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, concatenate, Conv2DTranspose
 from tensorflow.keras.models import Model
 
-from sklearn.model_selection import train_test_split
 
 from Metrics import iou_metric, continuity_metric, segment_count_metric, path_quality_metric, reachability_metric, bce_dice_loss
 from Visualizer import visualize_results, plot_training_results
@@ -104,8 +103,13 @@ def train(df_filename):
     X, Y, _ = preprocess_data(df_raw)
 
     TRAIN_RATIO, TEST_RATIO = 0.70, 0.15
-    X_train, X_temp, Y_train, Y_temp = train_test_split(X, Y, test_size=1 - TRAIN_RATIO, random_state=42)
-    X_val, X_test, Y_val, Y_test     = train_test_split(X_temp, Y_temp, test_size=TEST_RATIO / (1 - TRAIN_RATIO), random_state=42)
+    rng  = np.random.default_rng(42)
+    idx  = rng.permutation(len(X))
+    n_train = int(len(X) * TRAIN_RATIO)
+    n_test  = int(len(X) * TEST_RATIO)
+    X_train, Y_train = X[idx[:n_train]],          Y[idx[:n_train]]
+    X_val,   Y_val   = X[idx[n_train:-n_test]],   Y[idx[n_train:-n_test]]
+    X_test,  Y_test  = X[idx[-n_test:]],           Y[idx[-n_test:]]
 
     print(f'Treino:    {len(X_train):5} ({len(X_train)/len(X)*100:.1f}%)')
     print(f'Validação: {len(X_val):5} ({len(X_val)/len(X)*100:.1f}%)')
