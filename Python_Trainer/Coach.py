@@ -63,52 +63,36 @@ def baseline_layer(filters, inputs):
 def decoder_block(filters, connections, inputs):
     x = Conv2DTranspose(filters, kernel_size=(2, 2), padding='same', activation='relu', strides=2)(inputs)
     x = concatenate([x, connections], axis=-1)
-    x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
-    x = Conv2D(filters, kernel_size=(2, 2), padding='same', activation='relu')(x)
+    x = Conv2D(filters, kernel_size=(3, 3), padding='same', activation='relu')(x)
+    x = Conv2D(filters, kernel_size=(3, 3), padding='same', activation='relu')(x)
     return x
 
 def build_unet(input_size):
     inputs = Input(input_size)
 
-    s1, p1 = encoder_block(64,  inputs=inputs)
-    s2, p2 = encoder_block(128, inputs=p1)
-    s3, p3 = encoder_block(256, inputs=p2)
-    s4, p4 = encoder_block(512, inputs=p3)
+    s1, p1 = encoder_block(32,  inputs=inputs)
+    s2, p2 = encoder_block(64, inputs=p1)
+    s3, p3 = encoder_block(128, inputs=p2)
+    s4, p4 = encoder_block(256, inputs=p3)
+    # s5, p5 = encoder_block(1024, inputs=p4)
 
-    baseline = baseline_layer(1024, p4)
+    # baseline = baseline_layer(2048, p5)
+    baseline = baseline_layer(512, p4)
 
-    d1 = decoder_block(512, s4, baseline)
-    d2 = decoder_block(256, s3, d1)
-    d3 = decoder_block(128, s2, d2)
-    d4 = decoder_block(64,  s1, d3)
+    # d5 = decoder_block(1024, s5, baseline)
+    # d4 = decoder_block(512, s4, d5)
+    d4 = decoder_block(256, s4, baseline)
+    d3 = decoder_block(128, s3, d4)
+    d2 = decoder_block(64, s2, d3)
+    d1 = decoder_block(32,  s1, d2)
 
-    output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d4)
+    output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d1)
     model = Model(inputs=inputs, outputs=output, name='Unet')
     model.compile(optimizer=tf.keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4),
                   loss=bce_dice_loss,
-                  metrics=['accuracy', iou_metric, continuity_metric, segment_count_metric, path_quality_metric])
+                  metrics=[iou_metric])
     model.summary()
     return model
-
-def build_simplified_unet(input_size):
-    inputs = Input(input_size)
-
-    s1, p1 = encoder_block(64,  inputs=inputs)
-    s2, p2 = encoder_block(128, inputs=p1)
-
-    baseline = baseline_layer(256, p2)
-
-    d3 = decoder_block(128, s2, baseline)
-    d4 = decoder_block(64,  s1, d3)
-
-    output = Conv2D(1, kernel_size=(1, 1), activation='sigmoid')(d4)
-    model = Model(inputs=inputs, outputs=output, name='Light_Unet')
-    model.compile(optimizer=tf.keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4),
-                  loss=bce_dice_loss,
-                  metrics=['accuracy', iou_metric, continuity_metric, segment_count_metric, path_quality_metric])
-    model.summary()
-    return model
-
 
 # %%
 # Execução
@@ -145,17 +129,25 @@ def train(df_filename):
     model = build_unet(input_size=(H, W, 3))
 
     checkpoint_filepath = f'{results_path}/path_finder_{model.name}.keras'
-    early_stopping = EarlyStopping(monitor='val_path_quality_metric', patience=25,
-                                   verbose=1, restore_best_weights=True, mode='max')
-    model_checkpoint = ModelCheckpoint(checkpoint_filepath, monitor='val_path_quality_metric',
-                                       save_best_only=True, verbose=0, mode='max')
-
+    early_stopping = EarlyStopping(
+        monitor='val_loss', patience=50,
+        verbose=1,
+        restore_best_weights=True,
+        mode='min'
+    )
+    model_checkpoint = ModelCheckpoint(
+        checkpoint_filepath,
+        monitor='val_loss',
+        mode='min',
+        save_best_only=True,
+        verbose=0
+    )
     # --- Treinamento ---
     print(f'\nIniciando treinamento: {basename}')
     history = model.fit(
         X_train, Y_train,
         validation_data=(X_val, Y_val),
-        epochs=500,
+        epochs=250,
         batch_size=64,
         callbacks=[early_stopping, model_checkpoint],
         verbose=2,
@@ -163,25 +155,30 @@ def train(df_filename):
 
     best_model = tf.keras.models.load_model(
         checkpoint_filepath,
-        custom_objects={'bce_dice_loss': bce_dice_loss,
-                        'iou_metric': iou_metric,
-                        'continuity_metric': continuity_metric,
-                        'segment_count_metric': segment_count_metric,
-                        'path_quality_metric': path_quality_metric}
+        custom_objects={
+            'bce_dice_loss': bce_dice_loss,
+            'iou_metric': iou_metric,
+            # 'continuity_metric': continuity_metric,
+            # 'segment_count_metric': segment_count_metric,
+            # 'path_quality_metric': path_quality_metric
+        }
     )
 
     # --- Avaliação ---
     print('\nAvaliação Final no Conjunto de Teste:')
-    loss, acc, iou, cont, seg, quality = best_model.evaluate(X_test, Y_test, verbose=1)
-    print(f'Loss: {loss:.4f} | Acurácia: {acc:.4f} | IoU: {iou:.4f} | '
-          f'Continuidade: {cont:.4f} | Segmentos: {seg:.4f} | Quality: {quality:.4f}')
+    loss, iou = best_model.evaluate(X_test, Y_test, verbose=1)
+    print(f'Loss: {loss:.4f} | IoU: {iou:.4f}')
+    # loss, acc, iou, cont, seg, quality = best_model.evaluate(X_test, Y_test, verbose=1)
+    # print(f'Loss: {loss:.4f} | Acurácia: {acc:.4f} | IoU: {iou:.4f} | '
+    #       f'Continuidade: {cont:.4f} | Segmentos: {seg:.4f} | Quality: {quality:.4f}')
 
     predictions_test = best_model.predict(X_test, verbose=0)
     reach = reachability_metric(X_test, predictions_test)
     print(f'Alcançabilidade (início→fim): {reach:.4f}')
 
     visualize_results(X_test, Y_test, best_model, results_path,
-                      num_samples=max(1, int(len(X_test) * 0.15)))
+                      num_samples=max(1, int(len(X_test) * 0.01)),
+                      pred_label= 'Teacher')
     plot_training_results(history, model.name, basename, results_path)
 
     return results_path, checkpoint_filepath

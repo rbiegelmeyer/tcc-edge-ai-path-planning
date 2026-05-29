@@ -14,8 +14,12 @@ from ConvertKeras2ONNX import convert
 # Datasets a processar — edite esta lista conforme necessário
 # ---------------------------------------------------------------
 DATASETS = [
-    '../AStar/W064xH064_D07_S000000_E005000.csv',
-    # '../AStar/W064xH064_D01_S000000_E005000.csv',
+    # '../AStar/W064xH064_D03_S000000_E001000.csv',
+    # '../AStar/W064xH064_D03_S000000_E005000.csv',
+    # '../AStar/W064xH064_D03_S000000_E020000.csv',
+    # '../AStar/W064xH064_D00_S000000_E005000.csv',
+    # '../AStar/W064xH064_D03_S000000_E025000.csv',
+    '../AStar/W064xH064_D03_S000000_E080000.csv',
     # '../AStar/W064xH064_D02_S000000_E005000.csv',
     # '../AStar/W064xH064_D03_S000000_E005000.csv',
     # '../AStar/W064xH064_D04_S000000_E005000.csv',

@@ -80,9 +80,10 @@ def path_quality_metric(y_true, y_pred, alpha=0.4, beta=0.3):
       1-alpha-beta → peso da contagem de segmentos (padrão 0.3)
     """
     iou  = iou_metric(y_true, y_pred)
-    conn = continuity_metric(y_true, y_pred)
-    seg  = segment_count_metric(y_true, y_pred)
-    return alpha * iou + beta * conn + (1.0 - alpha - beta) * seg
+    # conn = continuity_metric(y_true, y_pred)
+    # seg  = segment_count_metric(y_true, y_pred)
+    # return alpha * iou + beta * conn + (1.0 - alpha - beta) * seg
+    return iou
 
 
 def dice_loss(y_true, y_pred, smooth=1e-6):

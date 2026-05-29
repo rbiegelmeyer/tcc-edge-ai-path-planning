@@ -54,7 +54,7 @@ def visualize_results(X_data, Y_true, model, results_path, num_samples=3, prefix
         for ax, img, title in zip(
             axes,
             [img_input, img_target, img_pred],
-            ['Input\n(Obstáculos)', 'Target\n(Caminho Real)', f'Previsão\n({pred_label})'],
+            ['Input\n(Obstáculos)', 'Target\n(Caminho A*)', f'Previsão\n({pred_label})'],
         ):
             ax.imshow(img, interpolation='nearest')
             ax.set_title(title, fontsize=9)
@@ -79,10 +79,10 @@ def visualize_results(X_data, Y_true, model, results_path, num_samples=3, prefix
 
 def plot_training_results(history, model_name, basename, results_path):
     specs = [
-        ('path_quality_metric',  'val_path_quality_metric',  'Path Quality',      'Score'),
+        # ('path_quality_metric',  'val_path_quality_metric',  'Path Quality',      'Score'),
         ('iou_metric',           'val_iou_metric',           f'IoU ({basename})', 'IoU'),
-        ('continuity_metric',    'val_continuity_metric',    'Continuidade',      'Score'),
-        ('segment_count_metric', 'val_segment_count_metric', 'Segmentos Únicos',  'Score'),
+        # ('continuity_metric',    'val_continuity_metric',    'Continuidade',      'Score'),
+        # ('segment_count_metric', 'val_segment_count_metric', 'Segmentos Únicos',  'Score'),
         ('loss',                 'val_loss',                 'Loss',              'BCE + Dice'),
     ]
 

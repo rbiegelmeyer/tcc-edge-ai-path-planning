@@ -77,20 +77,20 @@ def build_student(input_size):
     def decoder_block(filters, skip, x):
         x = Conv2DTranspose(filters, (2, 2), padding='same', activation='relu', strides=2)(x)
         x = concatenate([x, skip], axis=-1)
-        x = Conv2D(filters, (2, 2), padding='same', activation='relu')(x)
-        return Conv2D(filters, (2, 2), padding='same', activation='relu')(x)
+        x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
+        return Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
 
-    s1, p1 = encoder_block(16,  inputs)
-    s2, p2 = encoder_block(32,  p1)
-    s3, p3 = encoder_block(64,  p2)
-    s4, p4 = encoder_block(128, p3)
+    s1, p1 = encoder_block(8,  inputs)
+    s2, p2 = encoder_block(16,  p1)
+    s3, p3 = encoder_block(32,  p2)
+    s4, p4 = encoder_block(64, p3)
 
-    base = baseline_layer(256, p4)
+    base = baseline_layer(128, p4)
 
-    d1 = decoder_block(128, s4, base)
-    d2 = decoder_block(64,  s3, d1)
-    d3 = decoder_block(32,  s2, d2)
-    d4 = decoder_block(16,  s1, d3)
+    d1 = decoder_block(64, s4, base)
+    d2 = decoder_block(32,  s3, d1)
+    d3 = decoder_block(16,  s2, d2)
+    d4 = decoder_block(8,  s1, d3)
 
     output = Conv2D(1, (1, 1), activation='sigmoid')(d4)
     model = Model(inputs=inputs, outputs=output, name='Student_Unet')
@@ -110,11 +110,13 @@ def distill(results_path, teacher_checkpoint_path):
 
     teacher = tf.keras.models.load_model(
         teacher_checkpoint_path,
-        custom_objects={'bce_dice_loss': bce_dice_loss,
-                        'iou_metric': iou_metric,
-                        'continuity_metric': continuity_metric,
-                        'segment_count_metric': segment_count_metric,
-                        'path_quality_metric': path_quality_metric}
+        custom_objects={
+            'bce_dice_loss': bce_dice_loss,
+            'iou_metric': iou_metric,
+            # 'continuity_metric': continuity_metric,
+            # 'segment_count_metric': segment_count_metric,
+            # 'path_quality_metric': path_quality_metric
+        }
     )
 
     student = build_student(input_size=(H, W, 3))
@@ -122,21 +124,26 @@ def distill(results_path, teacher_checkpoint_path):
     distiller = Distiller(student=student, teacher=teacher)
     distiller.compile(
         optimizer=keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4),
-        metrics=[iou_metric, continuity_metric, segment_count_metric, path_quality_metric],
+        metrics=[iou_metric],
         student_loss_fn=bce_dice_loss,
         distillation_loss_fn=keras.losses.KLDivergence(),
         alpha=0.1,
         temperature=5,
     )
 
-    early_stopping = EarlyStopping(monitor='val_path_quality_metric', patience=15,
-                                   verbose=1, restore_best_weights=True, mode='max')
+    early_stopping = EarlyStopping(
+        monitor='val_loss',
+        patience=20,
+        verbose=1,
+        restore_best_weights=True,
+        mode='min'
+    )
 
     print(f'\nIniciando destilação em: {results_path}')
     distiller.fit(
         X_train, Y_train,
         validation_data=(X_val, Y_val),
-        epochs=120,
+        epochs=100,
         batch_size=64,
         callbacks=[early_stopping],
         verbose=2,
@@ -152,8 +159,8 @@ def distill(results_path, teacher_checkpoint_path):
     print(f'Alcançabilidade (início→fim): {reach:.4f}')
 
     visualize_results(X_test, Y_test, student, results_path,
-                      num_samples=max(1, int(len(X_test) * 0.30)),
-                      prefix='distilled_', pred_label='Aluno')
+                      num_samples=max(1, int(len(X_test) * 0.01)),
+                      prefix='distilled_', pred_label='Student')
 
     return student_checkpoint
 
