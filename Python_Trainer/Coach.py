@@ -73,13 +73,9 @@ def build_unet(input_size):
     s2, p2 = encoder_block(64, inputs=p1)
     s3, p3 = encoder_block(128, inputs=p2)
     s4, p4 = encoder_block(256, inputs=p3)
-    # s5, p5 = encoder_block(1024, inputs=p4)
 
-    # baseline = baseline_layer(2048, p5)
     baseline = baseline_layer(512, p4)
 
-    # d5 = decoder_block(1024, s5, baseline)
-    # d4 = decoder_block(512, s4, d5)
     d4 = decoder_block(256, s4, baseline)
     d3 = decoder_block(128, s3, d4)
     d2 = decoder_block(64, s2, d3)
