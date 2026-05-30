@@ -5,6 +5,10 @@ import sys
 import numpy as np
 import pandas as pd
 
+DEVICE = 'GPU'
+if DEVICE == 'CPU':
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, concatenate, Conv2DTranspose
