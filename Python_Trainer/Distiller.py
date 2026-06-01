@@ -5,7 +5,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, concatenate, Conv2DTranspose
 from tensorflow.keras.models import Model
 
-from Metrics import iou_metric, continuity_metric, segment_count_metric, path_quality_metric, reachability_metric, bce_dice_loss
+from Metrics import iou_metric, continuity_metric, segment_count_metric, path_quality_metric, bce_dice_loss
 from Visualizer import visualize_results
 
 
@@ -133,7 +133,7 @@ def distill(results_path, teacher_checkpoint_path):
 
     early_stopping = EarlyStopping(
         monitor='val_loss',
-        patience=20,
+        patience=10,
         verbose=1,
         restore_best_weights=True,
         mode='min'
@@ -154,12 +154,8 @@ def distill(results_path, teacher_checkpoint_path):
     student.save(student_checkpoint)
     print(f'Modelo aluno salvo em: {student_checkpoint}')
 
-    predictions_test = student.predict(X_test, verbose=0)
-    reach = reachability_metric(X_test, predictions_test)
-    print(f'Alcançabilidade (início→fim): {reach:.4f}')
-
     visualize_results(X_test, Y_test, student, results_path,
-                      num_samples=max(1, int(len(X_test) * 0.01)),
+                      num_samples=max(20, int(len(X_test) * 0.01)),
                       prefix='distilled_', pred_label='Student')
 
     return student_checkpoint
