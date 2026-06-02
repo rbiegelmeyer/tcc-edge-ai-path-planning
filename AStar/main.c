@@ -79,11 +79,13 @@ static int      vis_quit      = 0;                 /**< Non-zero when the user r
 static int      vis_skip      = 0;                 /**< Non-zero when the user skips the current map. */
 static int      vis_step      = 0;                 /**< A* step counter for the current map. */
 static uint32_t vis_map_id    = 0;                 /**< ID of the map currently being displayed. */
-static int      vis_show_h    = 1;                 /**< Non-zero to display h(n) values inside cells. */
+static int      vis_show_h    = 1;                 /**< Cell label mode: 0=none 1=h(n) 2=g(n) 3=f(n). */
 static int      vis_hold_done = 0;                 /**< Non-zero to hold after each solved map. */
 
-/* Forward declaration — arrays are defined after the VISUALIZE block. */
+/* Forward declarations — arrays are defined after the VISUALIZE block. */
 extern float h[MAX_HEIGHT][MAX_WIDTH];
+extern float g[MAX_HEIGHT][MAX_WIDTH];
+extern float f[MAX_HEIGHT][MAX_WIDTH];
 
 /** @brief 24-bit RGB color for SDL2 rendering. */
 typedef struct { uint8_t r, g, b; } VisColor;
@@ -212,7 +214,7 @@ static void vis_pump(void)
                     if (vis_delay > VIS_DELAY_MAX) vis_delay = VIS_DELAY_MAX;
                     break;
                 case SDLK_SPACE:  vis_paused = !vis_paused; break;
-                case SDLK_h:      vis_show_h    = !vis_show_h;    break;
+                case SDLK_h:      vis_show_h = (vis_show_h + 1) % 4; break;
                 case SDLK_w:      vis_hold_done = !vis_hold_done; break;
                 case SDLK_n: case SDLK_RETURN: case SDLK_KP_ENTER:
                     vis_skip = 1; vis_paused = 0; break;
@@ -361,13 +363,19 @@ static void vis_draw(
 
             vis_fill_rect(x*cs+1, y*cs+1, cs-1, cs-1, VIS_COLORS[ci]);
 
-            /* Overlay h(n) value on open, closed, current, and path cells
-             * when the cell is large enough to fit the 5x7 font. */
-            if (vis_show_h && cs >= 12 && h[y][x] > 0 &&
+            /* Overlay a cost value on open, closed, current, and path cells
+             * when the cell is large enough to fit the 5x7 font.
+             * vis_show_h cycles: 0=none 1=h(n) 2=g(n) 3=f(n). */
+            if (vis_show_h && cs >= 12 &&
                 (ci == 5 || ci == 6 || ci == 7 || ci == 2)) {
-                int val = (int)(h[y][x] + 0.5f);
-                val = val < 0 ? 0 : val > 99 ? 99 : val;
-                vis_draw_number(x*cs + cs/2, y*cs + cs/2, val);
+                float raw = vis_show_h == 1 ? h[y][x]
+                          : vis_show_h == 2 ? g[y][x]
+                                            : f[y][x];
+                if (raw > 0.0f) {
+                    int val = (int)(raw + 0.5f);
+                    val = val < 0 ? 0 : val > 99 ? 99 : val;
+                    vis_draw_number(x*cs + cs/2, y*cs + cs/2, val);
+                }
             }
         }
     }
@@ -399,7 +407,8 @@ static void vis_draw(
 
     SDL_RenderPresent(vis_renderer);
 
-    /* Update window title with map ID, step count, and current speed. */
+    /* Update window title with map ID, step count, current speed, and label mode. */
+    static const char *label_names[] = {"off", "h(n)", "g(n)", "f(n)"};
     char title[256];
     if (final_frame && vis_hold_done)
         snprintf(title, sizeof(title),
@@ -407,8 +416,9 @@ static void vis_draw(
             vis_map_id);
     else
         snprintf(title, sizeof(title),
-            "A* Visualizer  |  Mapa #%u  |  Passo: %d  |  Vel: %dms%s%s",
+            "A* Visualizer  |  Mapa #%u  |  Passo: %d  |  Vel: %dms  |  H: %s%s%s",
             vis_map_id, vis_step, vis_delay,
+            label_names[vis_show_h],
             vis_paused    ? "  |  [PAUSADO]"   : "",
             vis_hold_done ? "  |  [W:aguarda]" : "");
     SDL_SetWindowTitle(vis_window, title);
@@ -950,7 +960,7 @@ void generate_dataset(int16_t width, int16_t height, int16_t difficulty,
                       uint32_t start_id, uint32_t end_id)
 {
     char filename[80];
-    snprintf(filename, sizeof(filename), "W%03dxH%03d_D%02d_S%06d_E%06d.csv",
+    snprintf(filename, sizeof(filename), "./datasets/W%03dxH%03d_D%02d_S%06d_E%06d.csv",
              width, height, difficulty, start_id, end_id);
 
     fptr = fopen(filename, "w+");
@@ -1020,7 +1030,7 @@ int main(int argc, char **argv)
         if (vis_should_quit()) break;
 #endif
         // generate_dataset(64, 64, i, 0, 1000);
-        generate_dataset(64, 64, i, 0, 30000);
+        generate_dataset(64, 64, i, 100000, 100100);
     }
 
 #ifdef VISUALIZE

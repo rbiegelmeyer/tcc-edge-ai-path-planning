@@ -22,11 +22,12 @@
 #include <math.h>
 
 /* ----------------------------------------------------------------
- * Internal accessor macro
- * MAP(r,c) accesses the caller's flat buffer with stride = width.
- * 'map' and 'width' must be in scope where this macro is used.
+ * Internal accessor macros  ('map'/'result'/'width' must be in scope)
+ * IMAP — read from the const input map (may be in Flash)
+ * OMAP — write to the mutable result buffer (always in RAM)
  * ---------------------------------------------------------------- */
-#define MAP(r, c)  (map[(r) * width + (c)])
+#define IMAP(r, c)  (map[(r) * width + (c)])
+#define OMAP(r, c)  (result[(r) * width + (c)])
 
 /* ----------------------------------------------------------------
  * Static working buffers — never allocated on the call stack
@@ -117,13 +118,13 @@ static int16_t *_get_best_node(int16_t height, int16_t width)
  * assigned a parent during the search).
  *
  * @param current  In/out: starting coordinates {row, col}; modified in-place.
- * @param map      Caller's flat map buffer; path cells are written here.
- * @param width    Map width (stride of @p map).
+ * @param result   Output RAM buffer; path cells are written here.
+ * @param width    Map width (stride of @p result).
  */
-static void _reconstruct(int16_t *current, int16_t *map, int16_t width)
+static void _reconstruct(int16_t *current, int8_t *result, int16_t width)
 {
     while (current[0] != -1) {
-        MAP(current[0], current[1]) = ASTAR_PATH;
+        result[current[0] * width + current[1]] = (int8_t)ASTAR_PATH;
 
         int16_t pr = _parent[current[0]][current[1]][0];
         int16_t pc = _parent[current[0]][current[1]][1];
@@ -137,20 +138,24 @@ static void _reconstruct(int16_t *current, int16_t *map, int16_t width)
  * Public API
  * ================================================================ */
 
-AStarStatus astar_solve(int16_t *map, int16_t height, int16_t width)
+AStarStatus astar_solve(const int8_t *map, int8_t *result,
+                        int16_t height, int16_t width)
 {
     /* ---- Validate inputs ---- */
-    if (map == NULL)           return ASTAR_INVALID;
-    if (height <= 0 || width <= 0) return ASTAR_INVALID;
+    if (map == NULL || result == NULL) return ASTAR_INVALID;
+    if (height <= 0 || width <= 0)     return ASTAR_INVALID;
     if (height > ASTAR_MAX_HEIGHT || width > ASTAR_MAX_WIDTH) return ASTAR_INVALID;
 
-    /* ---- Locate ASTAR_START (3) and ASTAR_END (4) inside the map ---- */
+    /* ---- Zero the result buffer before any early return ---- */
+    memset(result, 0, (size_t)height * (size_t)width * sizeof(int8_t));
+
+    /* ---- Locate ASTAR_START (3) and ASTAR_END (4) inside the input map ---- */
     int16_t start_row = -1, start_col = -1;
     int16_t end_row   = -1, end_col   = -1;
 
     for (int16_t r = 0; r < height; r++) {
         for (int16_t c = 0; c < width; c++) {
-            int16_t v = MAP(r, c);
+            int8_t v = IMAP(r, c);
             if (v == ASTAR_START) { start_row = r; start_col = c; }
             if (v == ASTAR_END)   { end_row   = r; end_col   = c; }
         }
@@ -159,7 +164,10 @@ AStarStatus astar_solve(int16_t *map, int16_t height, int16_t width)
     if (start_row < 0 || end_row < 0) return ASTAR_INVALID;
 
     /* Trivial case: start == end */
-    if (start_row == end_row && start_col == end_col) return ASTAR_OK;
+    if (start_row == end_row && start_col == end_col) {
+        OMAP(start_row, start_col) = (int8_t)ASTAR_START;
+        return ASTAR_OK;
+    }
 
     /* ---- Clear all working buffers ---- */
     memset(_g,      0,  sizeof(_g));
@@ -186,12 +194,11 @@ AStarStatus astar_solve(int16_t *map, int16_t height, int16_t width)
         /* Select the open node with the lowest f(n). */
         current = _get_best_node(height, width);
 
-        /* Goal check. */
+        /* Goal reached: write path to result and restore markers. */
         if (current[0] == end_row && current[1] == end_col) {
-            _reconstruct(current, map, width);
-            /* Restore start/end markers overwritten by _reconstruct. */
-            MAP(start_row, start_col) = ASTAR_START;
-            MAP(end_row,   end_col)   = ASTAR_END;
+            _reconstruct(current, result, width);
+            OMAP(start_row, start_col) = (int8_t)ASTAR_START;
+            OMAP(end_row,   end_col)   = (int8_t)ASTAR_END;
             return ASTAR_OK;
         }
 
@@ -209,9 +216,9 @@ AStarStatus astar_solve(int16_t *map, int16_t height, int16_t width)
             if (nr < 0 || nr >= height || nc < 0 || nc >= width)
                 continue;
 
-            /* Skip already-visited and wall cells. */
-            if (_closed[nr][nc] == 1)    continue;
-            if (MAP(nr, nc) == ASTAR_WALL) continue;
+            /* Skip already-visited and wall cells (read from const input map). */
+            if (_closed[nr][nc] == 1)        continue;
+            if (IMAP(nr, nc) == ASTAR_WALL)  continue;
 
             /* Add to open list if not already there. */
             if (_open[nr][nc] != 1) {
@@ -227,6 +234,6 @@ AStarStatus astar_solve(int16_t *map, int16_t height, int16_t width)
         }
     }
 
-    /* Open list exhausted — no solution. */
+    /* Open list exhausted — no solution; result stays fully zeroed. */
     return ASTAR_NO_PATH;
 }

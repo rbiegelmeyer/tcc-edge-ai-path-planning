@@ -70,26 +70,30 @@ typedef enum {
 /**
  * @brief  Solve A* on a caller-supplied maze.
  *
- * The @p map buffer is a flat, row-major grid with logical stride = @p width.
- * Element access: @c map[row * width + col].
+ * Both buffers are flat, row-major grids with logical stride = @p width.
+ * Element access: @c buf[row * width + col].
  *
- * The map must already contain exactly one ASTAR_START (3) cell and one
- * ASTAR_END (4) cell; the solver locates them by scanning the grid.
- * All other cells must be ASTAR_EMPTY (0) or ASTAR_WALL (1).
+ * @p map is read-only and must already contain exactly one ASTAR_START (3)
+ * cell and one ASTAR_END (4) cell; all other cells must be ASTAR_EMPTY (0)
+ * or ASTAR_WALL (1).  It may reside in Flash (const).
  *
- * On success (ASTAR_OK), every cell on the solution path is written as
- * ASTAR_PATH (2).  The start (3) and end (4) markers are preserved.
+ * @p result is a caller-allocated RAM buffer of the same size.  The
+ * function zeroes it before writing, so it does not need to be
+ * pre-initialised.  On success (ASTAR_OK) the buffer contains:
+ *   - ASTAR_PATH  (2) for every cell on the solution path,
+ *   - ASTAR_START (3) at the start position,
+ *   - ASTAR_END   (4) at the goal position,
+ *   - ASTAR_EMPTY (0) everywhere else.
+ * On failure the buffer is left fully zeroed.
  *
- * On failure (ASTAR_NO_PATH), no path cells are marked.
- * On failure (ASTAR_INVALID), the map is left unmodified.
- *
- * @param  map     Caller-allocated int16_t buffer, at least
- *                 @p height × @p width elements, containing values 0–4.
+ * @param  map     Read-only input maze (Flash or RAM), height × width int8_t elements.
+ * @param  result  Output RAM buffer, height × width int8_t elements.
  * @param  height  Map height in cells; must be in [1, ASTAR_MAX_HEIGHT].
  * @param  width   Map width  in cells; must be in [1, ASTAR_MAX_WIDTH].
  *
  * @return ASTAR_OK, ASTAR_NO_PATH, or ASTAR_INVALID.
  */
-AStarStatus astar_solve(int16_t *map, int16_t height, int16_t width);
+AStarStatus astar_solve(const int8_t *map, int8_t *result,
+                        int16_t height, int16_t width);
 
 #endif /* ASTAR_H */
