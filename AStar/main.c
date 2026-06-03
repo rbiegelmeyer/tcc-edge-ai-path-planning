@@ -57,6 +57,7 @@
 //    H           : toggle h(n) heuristic values inside cells
 //    W           : hold mode — freeze after each map until N/ENTER
 //    N / ENTER   : next map (or release hold)
+//    S           : save screenshot (BMP named after the current map ID)
 //    ESC / Q     : quit
 // ============================================================
 #ifdef VISUALIZE
@@ -194,6 +195,32 @@ static void vis_draw_number(int cx, int cy, int val)
 }
 
 /**
+ * @brief Saves the current renderer content as a BMP file named "<map_id>.bmp"
+ *        in the working directory.
+ */
+static void vis_save_screenshot(void)
+{
+    if (!vis_renderer) return;
+
+    SDL_Surface *surf = SDL_CreateRGBSurface(0, vis_win_w, vis_win_h, 32,
+        0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0xFF000000u);
+    if (!surf) return;
+
+    SDL_RenderReadPixels(vis_renderer, NULL, SDL_PIXELFORMAT_ARGB8888,
+        surf->pixels, surf->pitch);
+
+    char path[64];
+    snprintf(path, sizeof(path), "%u.bmp", vis_map_id);
+    if (SDL_SaveBMP(surf, path) == 0)
+        printf("Screenshot salvo: %s\n", path);
+    else
+        fprintf(stderr, "Erro ao salvar screenshot: %s\n", SDL_GetError());
+
+    SDL_FreeSurface(surf);
+    fflush(stdout);
+}
+
+/**
  * @brief Drains the SDL2 event queue and updates the visualizer state.
  *
  * Handles SDL_QUIT and SDL_KEYDOWN events, updating the global state
@@ -218,6 +245,7 @@ static void vis_pump(void)
                 case SDLK_w:      vis_hold_done = !vis_hold_done; break;
                 case SDLK_n: case SDLK_RETURN: case SDLK_KP_ENTER:
                     vis_skip = 1; vis_paused = 0; break;
+                case SDLK_s: vis_save_screenshot(); break;
                 case SDLK_ESCAPE: case SDLK_q: vis_quit = 1; break;
                 default: break;
             }
