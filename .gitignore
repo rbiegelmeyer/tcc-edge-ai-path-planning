@@ -1,5 +1,6 @@
 .vscode
 
+AStar/datasets
 AStar/astar
 AStar/astar_vis
 AStar/*.csv
