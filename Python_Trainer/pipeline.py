@@ -19,7 +19,7 @@ DATASETS = [
     # '../AStar/W064xH064_D03_S000000_E020000.csv',
     # '../AStar/W064xH064_D03_S000000_E005000.csv',
     # '../AStar/W064xH064_D03_S000000_E010000.csv',
-    '../AStar/W064xH064_D03_S000000_E025000.csv',
+    '../AStar/W064xH064_D03_S000000_E075000.csv',
     # '../AStar/W064xH064_D03_S000000_E080000.csv',
     # '../AStar/W064xH064_D03_S000000_E050000.csv',
     # '../AStar/W064xH064_D03_S000000_E025000.csv',
@@ -66,24 +66,57 @@ def run_pipeline(datasets):
             # [32, 5, '../AStar/W064xH064_D03_S000000_E010000.csv'],
             # [64, 4, '../AStar/W064xH064_D03_S000000_E010000.csv'],
             # [32, 5, '../AStar/W064xH064_D03_S000000_E025000.csv'],
-            [32, 3, '../AStar/W064xH064_D03_S000000_E075000.csv'],
-            [32, 4, '../AStar/W064xH064_D03_S000000_E075000.csv'],
-            [32, 5, '../AStar/W064xH064_D03_S000000_E075000.csv'],
-            [64, 3, '../AStar/W064xH064_D03_S000000_E075000.csv'],
-            [64, 4, '../AStar/W064xH064_D03_S000000_E075000.csv'],
+            # [32, 3, '../AStar/W064xH064_D03_S000000_E075000.csv'],
+            # [32, 4, '../AStar/W064xH064_D03_S000000_E075000.csv'],
+            # [32, 5, '../AStar/W064xH064_D03_S000000_E075000.csv'],
+            # [64, 3, '../AStar/W064xH064_D03_S000000_E075000.csv'],
+            # [4, 3, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [4, 4, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [4, 5, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [4, 6, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [8, 3, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [8, 4, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [8, 5, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [8, 6, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [32, 5, '../AStar/datasets/W064xH064_D03_S000000_E005000.csv'],
+            # [16, 6, '../AStar/datasets/W064xH064_D03_S000000_E005000.csv'],
+            # [16, 6, '../AStar/datasets/W064xH064_D03_S000000_E010000.csv'],
+            # [16, 6, '../AStar/datasets/W064xH064_D03_S000000_E025000.csv'],
+            # [16, 6, '../AStar/datasets/W064xH064_D03_S000000_E050000.csv'],
+            # [128, 3, '../AStar/datasets/W064xH064_D03_S000000_E005000.csv'],
+            # [128, 3, '../AStar/datasets/W064xH064_D03_S000000_E010000.csv'],
+
+            # [128, 3, '../AStar/datasets/W064xH064_D03_S000000_E050000.csv'],
+            # [4, 2, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [8, 2, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [16, 2, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [32, 2, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [64, 2, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [128, 2, '../AStar/datasets/W064xH064_D03_S000000_E050000.csv'],
+            # [128, 2, '../AStar/datasets/W064xH064_D03_S000000_E025000.csv'],
+            [128, 2, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            [128, 3, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [16, 3, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [16, 4, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [16, 5, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
+            # [16, 6, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
             # [32, 5, '../AStar/W064xH064_D03_S000000_E080000.csv'],
-            [128, 3, '../AStar/W064xH064_D03_S000000_E075000.csv'],
+            # [128, 3, '../AStar/W064xH064_D03_S000000_E075000.csv'],
+        ]
+
+        tasks = [
+            [64, 4, '../AStar/datasets/W064xH064_D03_S000000_E075000.csv'],
         ]
 
         for sfilter, depth, dataset in tasks:
 
             try:
                 print('\n[1/3] Treinamento do professor...')
-                results_path, teacher_ckpt = train(dataset, sfilter=sfilter, depth=depth)
-                # results_path = f'./results/{label.split(".")[0]}'
-                # teacher_ckpt = f'{results_path}/path_finder_Unet.keras'
+                # results_path, teacher_ckpt = train(dataset, sfilter=sfilter, depth=depth)
+                results_path = f'./results/{label.split(".")[0]}'
+                teacher_ckpt = f'{results_path}/path_finder_Unet.keras'
 
-                continue
+                # continue
 
                 print('\n[2/3] Destilação do aluno...')
                 student_ckpt = distill(results_path, teacher_ckpt)

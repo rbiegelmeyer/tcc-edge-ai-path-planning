@@ -182,7 +182,7 @@ def train(df_filename, sfilter=64, depth=4):
         X_train, Y_train,
         validation_data=(X_val, Y_val),
         epochs=250,
-        batch_size=64,
+        batch_size=48,
         callbacks=[early_stopping, model_checkpoint],
         verbose=2,
     )
