@@ -1,6 +1,7 @@
 .vscode
 
 AStar/datasets
+AStar/artifacts
 AStar/astar
 AStar/astar_vis
 AStar/*.csv
@@ -15,3 +16,16 @@ Python_Trainer/__pycache__
 Python_Trainer/st_ai_ws
 Python_Trainer/tensorflow-onnx
 Python_Trainer/results
+Python_Trainer/training_log.*
+Python_Trainer/validation_report.json
+Python_Trainer/*.npz
+Python_Trainer/*.h
+
+
+Overleaf
+
+/*.pdf
+/*.doc
+/*.docx
+/*.xls
+/*.xlsx
