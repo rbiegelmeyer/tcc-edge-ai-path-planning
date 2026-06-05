@@ -1,3 +1,36 @@
+"""
+quantize_onnx.py — Exemplo de quantização dinâmica e estática (INT8) de modelos ONNX
+usando o ONNX Runtime Quantization Tool.
+
+Este script serve como referência e ponto de partida para quantizar manualmente um
+modelo ONNX exportado pelo pipeline. Para quantização integrada ao pipeline, use
+ConvertKeras2ONNX.py, que já executa a quantização estática automaticamente.
+
+Como usar:
+    1. Edite `results_path` para apontar para a pasta que contém o modelo ONNX.
+    2. Edite `checkpoint_filepath` para o nome base do checkpoint.
+    3. Execute:
+           python utils/quantize_onnx.py
+
+    Pré-requisito: o arquivo <checkpoint>.onnx deve existir na pasta de resultados.
+
+Saídas geradas:
+    <checkpoint>_dynamic_quantized.onnx   — quantização dinâmica (mais rápida de gerar)
+    <checkpoint>_static_quantized.onnx    — quantização estática INT8 com calibração
+
+Diferença entre os modos:
+    Dinâmica : pesos quantizados em tempo de compilação; ativações em tempo de execução.
+               Não requer dados de calibração. Bom ponto de partida.
+    Estática : pesos E ativações quantizados com base em amostras reais (X_test.npy).
+               Menor tamanho e maior velocidade em hardware dedicado (NPU/ARM).
+               Requer CalibrationDataReader com amostras representativas.
+
+Nota sobre PathDataReader:
+    Cada amostra precisa da dimensão de batch explícita (1, H, W, C). O input_name
+    'entrada_mapa' deve corresponder ao nome do tensor de entrada do seu modelo ONNX
+    (verificar com: session.get_inputs()[0].name).
+"""
+
 import onnx
 from onnxruntime.quantization import quantize_static, quantize_dynamic, QuantType, CalibrationDataReader
 import numpy as np

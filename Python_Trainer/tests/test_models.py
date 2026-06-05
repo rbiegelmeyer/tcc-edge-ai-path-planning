@@ -1,3 +1,35 @@
+"""
+test_models.py — Avalia e compara todos os modelos (.keras, .tflite, .onnx) presentes
+em uma pasta de resultados, gerando visualizações lado a lado.
+
+Como usar:
+    1. Edite `results_path` para apontar para a pasta que contém os modelos.
+    2. Execute diretamente:
+           python tests/test_models.py
+
+    A pasta de resultados deve conter:
+        X_test.npy                     — entradas (N, 64, 64, 3)
+        Y_test.npy                     — rótulos (N, 64, 64, 1)
+        *.keras / *.tflite / *.onnx    — um ou mais modelos a comparar
+
+    Saída:
+        <results_path>/test_models/mapa_predicao_<i>.png
+        — imagem com uma linha por modelo encontrado, mostrando a previsão binarizada.
+
+Detecção de formato:
+    O tipo do modelo é detectado pelos primeiros bytes do arquivo (magic bytes):
+        b'HDF5'        → Keras (.h5 / .keras)
+        b'TFL3'        → TFLite
+        b'onnx' / b'ir_version' → ONNX
+
+Dependências do projeto:
+    Importa `iou_metric`, `continuity_metric` e `path_quality_metric` do módulo
+    Metrics.py na pasta raiz do Python_Trainer. Garanta que o script seja executado
+    a partir do diretório Python_Trainer/ ou que o PYTHONPATH inclua esse diretório.
+
+Exemplo de results_path:
+    './results/result_W064xH064_D05_S000000_E005000'
+"""
 
 import os
 import numpy as np

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-csv2header.py — Converte um dataset CSV de mapas para um único .h com dados para o A*.
+csv_to_header.py — Converte um dataset CSV de mapas para um único .h com dados para o A*.
 
 O .h gerado contém os arrays static const diretamente, sem necessidade de um .c separado.
 Inclua-o em somente UM arquivo .c para evitar duplicação de dados em flash.
 
 Uso:
-    python csv2header.py W064xH064_D03_S100000_E100100.csv
-    python csv2header.py dataset.csv -o test_maps.h -n 50 --skip 10
-    python csv2header.py dataset.csv --ids 0 5 12 37
+    python csv_to_header.py W064xH064_D03_S100000_E100100.csv
+    python csv_to_header.py dataset.csv -o test_maps.h -n 50 --skip 10
+    python csv_to_header.py dataset.csv --ids 0 5 12 37
 """
 
 import argparse
@@ -93,7 +93,7 @@ def build_header(records, orig_indices, csv_name, out_name, guard):
     w(f' *')
     w(f' * ATENÇÃO: inclua este arquivo em somente UM .c para evitar')
     w(f' *          duplicação de dados na memória flash.')
-    w(f' * NÃO EDITE — re-gere com csv2header.py se necessário.')
+    w(f' * NÃO EDITE — re-gere com csv_to_header.py se necessário.')
     w(f' */')
     blank()
     w(f'#ifndef {guard}')

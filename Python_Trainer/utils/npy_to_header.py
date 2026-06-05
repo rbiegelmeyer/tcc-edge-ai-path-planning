@@ -1,14 +1,14 @@
 """
-Converte arquivo .npy ou .npz de mapas para x_val_data.h
+npy_to_header.py — Converte arquivo .npy ou .npz de mapas para x_val_data.h
 
 Uso:
-  python convert_npy.py <arquivo.npy>  [--out <destino.h>] [--max <N>]
-  python convert_npy.py <arquivo.npz>  [--key <chave>] [--out <destino.h>] [--max <N>]
+  python npy_to_header.py <arquivo.npy>  [--out <destino.h>] [--max <N>]
+  python npy_to_header.py <arquivo.npz>  [--key <chave>] [--out <destino.h>] [--max <N>]
 
 Exemplos:
-  python convert_npy.py X_val.npy
-  python convert_npy.py data.npz --key x_val --max 40
-  python convert_npy.py X_val.npy --out ./x_val_data.h
+  python npy_to_header.py X_val.npy
+  python npy_to_header.py data.npz --key x_val --max 40
+  python npy_to_header.py X_val.npy --out ./x_val_data.h
 
 Shape esperado do array: (N, 64, 64, 3)  — HWC, 3 canais
 
@@ -115,7 +115,7 @@ def main():
     flat = arr.reshape(N, -1)   # (N, 12288)
 
     with open(args.out, 'w') as f:
-        f.write('/* Auto-gerado por convert_npy.py — nao editar manualmente */\n')
+        f.write('/* Auto-gerado por npy_to_header.py — nao editar manualmente */\n')
         f.write('#ifndef X_VAL_DATA_H\n')
         f.write('#define X_VAL_DATA_H\n\n')
         f.write('#include <stdint.h>\n\n')

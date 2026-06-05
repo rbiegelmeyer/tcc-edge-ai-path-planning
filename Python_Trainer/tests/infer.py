@@ -195,7 +195,7 @@ def plot_sample(idx, x, y_true, pred_raw, pred_bin, output_dir, model_name):
         ax.set_title(title, fontsize=9, color='black')
         ax.set_facecolor('white')
 
-        # Grade fina por célula (igual ao bin2map.py)
+        # Grade fina por célula (igual ao bin_to_map.py)
         ax.set_xticks(np.arange(-0.5, W, 1), minor=True)
         ax.set_yticks(np.arange(-0.5, H, 1), minor=True)
         ax.tick_params(which='minor', length=0)

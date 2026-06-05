@@ -1,6 +1,6 @@
 """
-bin2map.py
-----------
+bin_to_map.py
+-------------
 Converts a 64x64 int8_t binary path-planning dump from the STM32H743
 into a PNG heatmap image.
 
@@ -11,9 +11,9 @@ Colour scale: temperature gradient (inferno)
 Optionally overlays the input map to mark walls, start, and end.
 
 Usage:
-    python bin2map.py result.bin
-    python bin2map.py result.bin --input input.bin
-    python bin2map.py result.bin --input input.bin --height 32 --width 32
+    python bin_to_map.py result.bin
+    python bin_to_map.py result.bin --input input.bin
+    python bin_to_map.py result.bin --input input.bin --height 32 --width 32
 """
 
 import sys

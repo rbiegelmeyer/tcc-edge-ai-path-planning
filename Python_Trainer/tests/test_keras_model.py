@@ -1,3 +1,28 @@
+"""
+test_keras_model.py — Avalia um modelo Keras (.keras) no conjunto de teste e gera
+visualizações comparativas (Input | Target A* | Previsão CNN).
+
+Como usar:
+    1. Edite a variável `results_path` para apontar para a pasta do resultado desejado.
+    2. Execute diretamente:
+           python tests/test_keras_model.py
+
+    A pasta de resultados deve conter:
+        best_path_finder_Unet1.keras  — checkpoint do melhor modelo
+        X_test.npy                    — entradas do conjunto de teste (N, 64, 64, 3)
+        Y_test.npy                    — rótulos do conjunto de teste (N, 64, 64, 1)
+
+    Saída:
+        <results_path>/test/<nome_do_modelo>/mapa_predicao_<i>.png
+        — imagem com 3 painéis: Input | Target | Previsão binarizada (threshold 0.5)
+
+Exemplo de results_path:
+    './results/result_W064xH064_D04_S000000_E005000'
+
+Nota: O backend matplotlib é forçado para 'Agg' (sem GUI) para compatibilidade com
+ambientes headless (servidores, WSL). Mova a chamada matplotlib.use() para antes de
+qualquer import de pyplot se quiser reutilizar este módulo.
+"""
 
 import os
 import numpy as np

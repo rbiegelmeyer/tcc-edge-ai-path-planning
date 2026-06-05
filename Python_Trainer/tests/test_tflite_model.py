@@ -1,3 +1,29 @@
+"""
+test_tflite_model.py — Avalia um modelo TensorFlow Lite (.tflite) no conjunto de
+teste e gera visualizações comparativas (Input | Target A* | Previsão CNN).
+
+Como usar:
+    1. Edite a variável `results_path` para apontar para a pasta do resultado desejado.
+    2. Execute diretamente:
+           python tests/test_tflite_model.py
+
+    A pasta de resultados deve conter:
+        best_path_finder_Unet1.tflite — modelo TFLite exportado
+        X_test.npy                    — entradas do conjunto de teste (N, 64, 64, 3)
+        Y_test.npy                    — rótulos do conjunto de teste (N, 64, 64, 1)
+
+    Saída:
+        <results_path>/test/tflite/mapa_predicao_<i>.png
+        — imagem com 3 painéis: Input | Target | Previsão binarizada (threshold 0.5)
+
+Nota sobre TFLite:
+    O intérprete TFLite não suporta inferência em batch. Por isso, cada amostra é
+    processada individualmente via `interpreter.invoke()`. Isso torna a avaliação
+    mais lenta que Keras ou ONNX, mas é representativa do comportamento embarcado.
+
+Exemplo de results_path:
+    './results/result_W064xH064_D04_S000000_E005000'
+"""
 
 import tensorflow as tf
 import numpy as np

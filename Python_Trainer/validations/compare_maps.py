@@ -1,12 +1,12 @@
 """
-comparar_mapas.py
------------------
+compare_maps.py
+---------------
 Gera colagens horizontais comparando o mapa esperado (SDL2 BMP) com o
 mapa atingido pelo MCU (matplotlib PNG).
 
 Uso:
-    python comparar_mapas.py [--esperados DIR] [--atingido DIR] [--output DIR]
-                             [--id-offset N] [--gap PX]
+    python compare_maps.py [--esperados DIR] [--atingido DIR] [--output DIR]
+                           [--id-offset N] [--gap PX]
 
 Saída: <output>/<id>.png — colagem lado a lado (esperado | atingido)
 """

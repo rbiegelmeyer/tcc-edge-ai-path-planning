@@ -1,3 +1,31 @@
+"""
+test_onnx_model.py — Avalia um modelo ONNX (.onnx) no conjunto de teste e gera
+visualizações comparativas (Input | Target A* | Previsão CNN).
+
+Como usar:
+    1. Edite a variável `results_path` para apontar para a pasta do resultado desejado.
+    2. Execute diretamente:
+           python tests/test_onnx_model.py
+
+    A pasta de resultados deve conter:
+        best_path_finder_Unet1.onnx — modelo ONNX exportado
+        X_test.npy                  — entradas do conjunto de teste (N, 64, 64, 3)
+        Y_test.npy                  — rótulos do conjunto de teste (N, 64, 64, 1)
+
+    Saída:
+        <results_path>/test/Unet1_onnx/mapa_predicao_<i>.png
+        — imagem com 3 painéis: Input | Target | Previsão binarizada (threshold 0.5)
+
+Execução:
+    Por padrão, a sessão ONNX Runtime tenta usar GPU (CUDAExecutionProvider).
+    Se CUDA não estiver disponível, adicione 'CPUExecutionProvider' como fallback:
+        providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+
+    O modelo ONNX suporta inferência em batch — todo o dataset é processado de uma vez.
+
+Exemplo de results_path:
+    './results/result_W064xH064_D04_S000000_E005000'
+"""
 
 import os
 import onnxruntime as ort

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-compare.py — Comparação visual: A* vs Modelo 1 vs Modelo 2 vs Heatmap Embarcado.
+compare_models.py — Comparação visual: A* vs Modelo 1 vs Modelo 2 vs Heatmap Embarcado.
 
 Gera uma imagem por amostra com 4 painéis horizontais:
-  [A* (Ground Truth) | Modelo 1 | Modelo 2 | Heatmap (bin2map)]
+  [A* (Ground Truth) | Modelo 1 | Modelo 2 | Heatmap (bin_to_map)]
 
 Uso:
-    python compare.py \\
+    python compare_models.py \\
         --npz     data.npz \\
         --model1  unet.keras     --name1 "U-Net D4" \\
         --model2  student.onnx   --name2 "Student INT8" \\
@@ -35,7 +35,7 @@ from typing import Optional
 from scipy.ndimage import convolve, label as scipy_label
 
 
-# ── Paleta (tema claro — igual infer.py / bin2map.py) ─────────────────────────
+# ── Paleta (tema claro — igual infer.py / bin_to_map.py) ─────────────────────
 _PATH_COLOR = np.array([0.95, 0.45, 0.00], dtype=np.float32)   # laranja
 _OBST_COLOR = np.array([0.40, 0.40, 0.40], dtype=np.float32)   # cinza
 _BG_COLOR   = np.array([1.00, 1.00, 1.00], dtype=np.float32)   # branco
@@ -286,7 +286,7 @@ def plot_comparison(global_idx, x, y_true,
     _apply_grid(ax, H, W, show_ticks)
     _add_markers(ax, start_yx, end_yx)
 
-    # ── Painel 4: Heatmap binário (bin2map) ───────────────────────────────────
+    # ── Painel 4: Heatmap binário (bin_to_map) ────────────────────────────────
     ax = axes[3]
     ax.set_facecolor(_FIG_BG)
     if result_map is not None:

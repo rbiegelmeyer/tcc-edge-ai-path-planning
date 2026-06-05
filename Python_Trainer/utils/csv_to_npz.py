@@ -18,7 +18,7 @@ Arrays salvos no .npz:
   end_x    — (N,) int16
   end_y    — (N,) int16
 
-O array 'x' é compatível com convert_npy.py para gerar x_val_data.h.
+O array 'x' é compatível com npy_to_header.py para gerar x_val_data.h.
 """
 
 import argparse
@@ -93,7 +93,7 @@ def main():
     size_kb = os.path.getsize(args.out) / 1024
     print(f"Gerado '{args.out}': {N} amostras, {size_kb:.1f} KB")
     print(f"  x.shape={x.shape}, dtype={x.dtype}")
-    print(f"  Para gerar x_val_data.h: python convert_npy.py {args.out} --key x")
+    print(f"  Para gerar x_val_data.h: python npy_to_header.py {args.out} --key x")
 
 
 if __name__ == '__main__':
