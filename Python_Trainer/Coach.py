@@ -158,7 +158,8 @@ def train(df_filename, sfilter=64, depth=4):
 
     checkpoint_filepath = f'{results_path}/path_finder_{model.name}.keras'
     early_stopping = EarlyStopping(
-        monitor='val_loss', patience=25,
+        monitor='val_loss',
+        patience=25,
         verbose=1,
         restore_best_weights=True,
         mode='min'

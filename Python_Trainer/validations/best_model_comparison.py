@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import pandas as pd
 
-CSV_PATH = os.path.join(os.path.dirname(__file__), 'training_log.csv')
+CSV_PATH = os.path.join(os.path.dirname(__file__), '../training_log.csv')
 
 
 def _load_best_per_dataset(csv_path):
