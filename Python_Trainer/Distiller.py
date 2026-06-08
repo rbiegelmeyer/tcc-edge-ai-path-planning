@@ -1,4 +1,9 @@
+import os
+
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.callbacks import EarlyStopping
@@ -12,15 +17,21 @@ from Visualizer import visualize_results
 class Distiller(keras.Model):
     def __init__(self, student, teacher):
         super(Distiller, self).__init__()
-        self.teacher = teacher
-        self.student = student
+        self.teacher      = teacher
+        self.student      = student
+        self.loss_tracker = keras.metrics.Mean(name='loss')
+        self.iou_tracker  = keras.metrics.Mean(name='iou_metric')
 
-    def compile(self, optimizer, metrics, student_loss_fn, distillation_loss_fn, alpha=0.1, temperature=3):
-        super(Distiller, self).compile(optimizer=optimizer, metrics=metrics)
-        self.student_loss_fn = student_loss_fn
+    @property
+    def metrics(self):
+        return [self.loss_tracker, self.iou_tracker]
+
+    def compile(self, optimizer, student_loss_fn, distillation_loss_fn, alpha=0.1, temperature=3):
+        super(Distiller, self).compile(optimizer=optimizer)
+        self.student_loss_fn      = student_loss_fn
         self.distillation_loss_fn = distillation_loss_fn
-        self.alpha = alpha
-        self.temperature = temperature
+        self.alpha                = alpha
+        self.temperature          = temperature
 
     def call(self, x, training=False):
         return self.student(x, training=training)
@@ -41,8 +52,8 @@ class Distiller(keras.Model):
         gradients = tape.gradient(loss, self.student.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.student.trainable_variables))
 
-        for metric in self.metrics:
-            metric.update_state(y, student_predictions)
+        self.loss_tracker.update_state(loss)
+        self.iou_tracker.update_state(iou_metric(y, student_predictions))
         return {m.name: m.result() for m in self.metrics}
 
     def test_step(self, data):
@@ -57,9 +68,9 @@ class Distiller(keras.Model):
         )
         loss = self.alpha * student_loss + (1 - self.alpha) * distillation_loss
 
-        for metric in self.metrics:
-            metric.update_state(y, student_predictions)
-        return {**{m.name: m.result() for m in self.metrics}, "loss": loss}
+        self.loss_tracker.update_state(loss)
+        self.iou_tracker.update_state(iou_metric(y, student_predictions))
+        return {m.name: m.result() for m in self.metrics}
 
 
 def build_student(input_size):
@@ -80,22 +91,82 @@ def build_student(input_size):
         x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
         return Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
 
-    s1, p1 = encoder_block(8,  inputs)
-    s2, p2 = encoder_block(16,  p1)
-    s3, p3 = encoder_block(32,  p2)
-    s4, p4 = encoder_block(64, p3)
+    s1, p1 = encoder_block(16,  inputs)
+    s2, p2 = encoder_block(32,  p1)
+    s3, p3 = encoder_block(64,  p2)
+    s4, p4 = encoder_block(128, p3)
 
-    base = baseline_layer(128, p4)
+    base = baseline_layer(236, p4)
 
-    d1 = decoder_block(64, s4, base)
-    d2 = decoder_block(32,  s3, d1)
-    d3 = decoder_block(16,  s2, d2)
-    d4 = decoder_block(8,  s1, d3)
+    d1 = decoder_block(128, s4, base)
+    d2 = decoder_block(64,  s3, d1)
+    d3 = decoder_block(32,  s2, d2)
+    d4 = decoder_block(16,  s1, d3)
 
     output = Conv2D(1, (1, 1), activation='sigmoid')(d4)
     model = Model(inputs=inputs, outputs=output, name='Student_Unet')
     model.summary()
     return model
+
+
+def _plot_distiller_results(history, results_path):
+    keys = list(history.history.keys())
+
+    iou_train = next((k for k in keys if 'iou' in k and not k.startswith('val_')), None)
+    iou_val   = next((k for k in keys if 'iou' in k and k.startswith('val_')), None)
+
+    specs = []
+    if iou_train and iou_val:
+        specs.append((iou_train, iou_val, 'IoU (%) por Época', 'IoU (%)'))
+    if 'loss' in keys and 'val_loss' in keys:
+        specs.append(('loss', 'val_loss', 'Val. Loss (%) por Época', 'Val. Loss (%)'))
+
+    if not specs:
+        print(f'[Distiller] Nenhuma métrica disponível para plotar. Chaves: {keys}')
+        return
+
+    _, axes = plt.subplots(len(specs), 1, figsize=(8, 5 * len(specs)))
+    if len(specs) == 1:
+        axes = [axes]
+
+    for ax, (train_key, val_key, title, ylabel) in zip(axes, specs):
+        val_values = history.history[val_key]
+        ax.plot(history.history[train_key], label='Treino',    color='blue',   linewidth=2)
+        ax.plot(val_values,                 label='Validação', color='orange', linewidth=2)
+        ax.set_title(title)
+        ax.set_xlabel('Épocas')
+        ax.set_ylabel(ylabel)
+        ax.grid(True, linestyle='--', alpha=0.6)
+
+        if 'loss' in val_key:
+            best_epoch = int(np.argmin(val_values))
+            best_value = val_values[best_epoch]
+            marker, marker_color = 'v', 'red'
+            label_best = f'Mín: {best_value:.4f}\n(época {best_epoch + 1})'
+        else:
+            best_epoch = int(np.argmax(val_values))
+            best_value = val_values[best_epoch]
+            marker, marker_color = '^', 'green'
+            label_best = f'Máx: {best_value:.4f}\n(época {best_epoch + 1})'
+
+        ax.scatter(best_epoch, best_value, color=marker_color,
+                   marker=marker, s=80, zorder=5, label=label_best)
+        ax.annotate(
+            f'{best_value:.4f}',
+            xy=(best_epoch, best_value),
+            xytext=(8, 8), textcoords='offset points',
+            fontsize=8, color=marker_color, fontweight='bold',
+            arrowprops=dict(arrowstyle='->', color=marker_color, lw=1.0),
+        )
+        ax.legend(fontsize=8)
+
+    plt.tight_layout()
+    out_dir = os.path.join(results_path, 'test', 'Student_Unet')
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, 'training_results_distiller.png')
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+    print(f'Gráfico de destilação salvo em: {out_path}')
 
 
 def distill(results_path, teacher_checkpoint_path):
@@ -124,7 +195,6 @@ def distill(results_path, teacher_checkpoint_path):
     distiller = Distiller(student=student, teacher=teacher)
     distiller.compile(
         optimizer=keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=1e-4),
-        metrics=[iou_metric],
         student_loss_fn=bce_dice_loss,
         distillation_loss_fn=keras.losses.KLDivergence(),
         alpha=0.1,
@@ -140,7 +210,7 @@ def distill(results_path, teacher_checkpoint_path):
     )
 
     print(f'\nIniciando destilação em: {results_path}')
-    distiller.fit(
+    history = distiller.fit(
         X_train, Y_train,
         validation_data=(X_val, Y_val),
         epochs=100,
@@ -148,6 +218,8 @@ def distill(results_path, teacher_checkpoint_path):
         callbacks=[early_stopping],
         verbose=2,
     )
+
+    _plot_distiller_results(history, results_path)
 
     # restore_best_weights=True garante que student tem os pesos do melhor epoch aqui
     student_checkpoint = f'{results_path}/student_distilled.keras'

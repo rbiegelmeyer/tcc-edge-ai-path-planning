@@ -87,14 +87,14 @@ def visualize_results(X_data, Y_true, model, results_path, num_samples=3, prefix
 
 def plot_training_results(history, model_name, basename, results_path, sfilter=None, depth=None):
     specs = [
-        # ('path_quality_metric',  'val_path_quality_metric',  'Path Quality',      'Score'),
-        ('iou_metric',           'val_iou_metric',           f'IoU ({basename})', 'IoU'),
-        # ('continuity_metric',    'val_continuity_metric',    'Continuidade',      'Score'),
-        # ('segment_count_metric', 'val_segment_count_metric', 'Segmentos Únicos',  'Score'),
-        ('loss',                 'val_loss',                 'Loss',              'BCE + Dice'),
+        # ('path_quality_metric',  'val_path_quality_metric',  'Path Quality',   'Score'),
+        ('iou_metric', 'val_iou_metric', 'IoU (%) por Época',      'IoU (%)'),
+        # ('continuity_metric',    'val_continuity_metric',    'Continuidade',   'Score'),
+        # ('segment_count_metric', 'val_segment_count_metric', 'Segmentos Únicos','Score'),
+        ('loss',       'val_loss',       'Val. Loss (%) por Época', 'Val. Loss (%)'),
     ]
 
-    _, axes = plt.subplots(1, len(specs), figsize=(6 * len(specs), 5))
+    _, axes = plt.subplots(len(specs), 1, figsize=(8, 5 * len(specs)))
 
     for ax, (train_key, val_key, title, ylabel) in zip(axes, specs):
         val_values = history.history[val_key]
