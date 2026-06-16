@@ -96,7 +96,7 @@ def build_student(input_size):
     s3, p3 = encoder_block(64,  p2)
     s4, p4 = encoder_block(128, p3)
 
-    base = baseline_layer(236, p4)
+    base = baseline_layer(256, p4)
 
     d1 = decoder_block(128, s4, base)
     d2 = decoder_block(64,  s3, d1)
