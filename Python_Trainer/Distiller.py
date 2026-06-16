@@ -79,17 +79,20 @@ def build_student(input_size):
     def encoder_block(filters, x):
         x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
         x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
-        return x, MaxPooling2D((2, 2), padding='same')(x)
+        p = MaxPooling2D((2, 2), padding='same')(x)
+        return x, p
 
     def baseline_layer(filters, x):
         x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
-        return Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
+        x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
+        return x
 
     def decoder_block(filters, skip, x):
         x = Conv2DTranspose(filters, (2, 2), padding='same', activation='relu', strides=2)(x)
         x = concatenate([x, skip], axis=-1)
         x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
-        return Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
+        x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
+        return x
 
     s1, p1 = encoder_block(16,  inputs)
     s2, p2 = encoder_block(32,  p1)
