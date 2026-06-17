@@ -1,0 +1,20 @@
+{
+  "toolchain": "STM32CubeIDE",
+  "variant": "ApplicationTemplate",
+  "fromMx": false,
+  "isGenerated": true,
+  "name": "TCC",
+  "createdAt": 1780193568056,
+  "lastModified": 1780379221460,
+  "lastAccessed": 1780379221459,
+  "path": "C:\\Users\\rbieg\\.stm32cubeaistudio\\workspace",
+  "board": "NUCLEO-H743ZI2",
+  "mcu": "",
+  "type": "BYOM",
+  "lastGenerationRunId": "run-2",
+  "uartInstance": {
+    "usart": "USART3",
+    "txpin": "PD8",
+    "rxpin": "PD9"
+  }
+}

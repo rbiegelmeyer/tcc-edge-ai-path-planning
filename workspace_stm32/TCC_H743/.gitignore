@@ -1,0 +1,8 @@
+Debug
+.settings
+.ai
+.venv
+
+*.bin
+__pycache__
+.vscode
