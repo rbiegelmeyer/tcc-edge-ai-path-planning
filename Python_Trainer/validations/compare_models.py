@@ -86,7 +86,7 @@ def load_model(model_path):
     if ext in ('.keras', '.h5'):
         import tensorflow as tf
         try:
-            sys.path.insert(0, str(Path(__file__).parent))
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
             from Metrics import bce_dice_loss, iou_metric
             custom = {'bce_dice_loss': bce_dice_loss, 'iou_metric': iou_metric}
         except ImportError:
@@ -390,7 +390,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    sys.path.insert(0, str(Path(__file__).parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
     output_dir = args.output or str(Path.cwd() / 'comparativo')
     os.makedirs(output_dir, exist_ok=True)
