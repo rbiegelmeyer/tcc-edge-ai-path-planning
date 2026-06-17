@@ -94,17 +94,17 @@ def build_student(input_size):
         x = Conv2D(filters, (3, 3), padding='same', activation='relu')(x)
         return x
 
-    s1, p1 = encoder_block(16,  inputs)
-    s2, p2 = encoder_block(32,  p1)
-    s3, p3 = encoder_block(64,  p2)
-    s4, p4 = encoder_block(128, p3)
+    s1, p1 = encoder_block(8,  inputs)
+    s2, p2 = encoder_block(16,  p1)
+    s3, p3 = encoder_block(32,  p2)
+    s4, p4 = encoder_block(64, p3)
 
-    base = baseline_layer(256, p4)
+    base = baseline_layer(128, p4)
 
-    d1 = decoder_block(128, s4, base)
-    d2 = decoder_block(64,  s3, d1)
-    d3 = decoder_block(32,  s2, d2)
-    d4 = decoder_block(16,  s1, d3)
+    d1 = decoder_block(64, s4, base)
+    d2 = decoder_block(32,  s3, d1)
+    d3 = decoder_block(16,  s2, d2)
+    d4 = decoder_block(8,  s1, d3)
 
     output = Conv2D(1, (1, 1), activation='sigmoid')(d4)
     model = Model(inputs=inputs, outputs=output, name='Student_Unet')
